@@ -11,14 +11,15 @@
   </style>
 </head>
 <body>
-  <h2>Последние 5 цен закрытия акции SBER</h2>
+  <h2>Последние 5 цен закрытия акции SBER (с 2020)</h2>
   <ul id="prices">
     <li>Загрузка...</li>
   </ul>
 
   <script>
-    async function fetchLast5Prices(ticker) {
-      const url = `https://iss.moex.com/iss/engines/stock/markets/shares/boards/TQBR/securities/${ticker}/candles.json?interval=24&limit=5&sort_order=desc`;
+    async function fetchRecentPrices(ticker) {
+      const fromDate = '2020-01-01';
+      const url = `https://iss.moex.com/iss/engines/stock/markets/shares/boards/TQBR/securities/${ticker}/candles.json?interval=24&from=${fromDate}&sort_order=asc&limit=100`;
 
       try {
         const res = await fetch(url);
@@ -34,9 +35,8 @@
         const dateIndex = columns.indexOf("begin");
         const closeIndex = columns.indexOf("close");
 
-        // Данные приходят в обратном порядке (сначала последний)
-        // Чтобы вывести по хронологии - перевернем массив
-        const last5 = data.slice(0, 5).reverse();
+        // Возьмём последние 5 записей из полученных данных
+        const last5 = data.slice(-5);
 
         return last5.map(row => ({
           date: row[dateIndex].split('T')[0],
@@ -53,7 +53,7 @@
       const ul = document.getElementById('prices');
       ul.innerHTML = '<li>Загрузка...</li>';
 
-      const prices = await fetchLast5Prices('SBER');
+      const prices = await fetchRecentPrices('SBER');
 
       if (!prices) {
         ul.innerHTML = '<li>Ошибка загрузки данных</li>';
