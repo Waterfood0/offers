@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8" />
-  <title>Свечной график SBER (2021-2025)</title>
+  <title>Простой график закрытия SBER (2021-2025)</title>
   <style>
     body { font-family: sans-serif; padding: 20px; max-width: 900px; margin: auto; }
     button { margin-right: 10px; padding: 8px 15px; cursor: pointer; }
@@ -11,7 +11,7 @@
 </head>
 <body>
 
-  <h2>Свечной график SBER (2021-2025)</h2>
+  <h2>График цены закрытия SBER (2021-2025)</h2>
 
   <div>
     <button onclick="loadAndDraw(24)">Дневные</button>
@@ -23,7 +23,6 @@
   <canvas id="chart" width="900" height="500"></canvas>
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-financial@3.4.0/dist/chartjs-chart-financial.min.js"></script>
 
   <script>
     const ctx = document.getElementById('chart').getContext('2d');
@@ -47,17 +46,11 @@
         const data = json.candles.data;
 
         const dateIdx = cols.indexOf('begin');
-        const openIdx = cols.indexOf('open');
-        const highIdx = cols.indexOf('high');
-        const lowIdx = cols.indexOf('low');
         const closeIdx = cols.indexOf('close');
 
         return data.map(row => ({
           x: new Date(row[dateIdx]),
-          o: row[openIdx],
-          h: row[highIdx],
-          l: row[lowIdx],
-          c: row[closeIdx]
+          y: row[closeIdx]
         }));
       } catch(e) {
         console.error(`Ошибка загрузки данных за ${year}`, e);
@@ -82,16 +75,16 @@
       }
 
       chart = new Chart(ctx, {
-        type: 'candlestick',
+        type: 'line',
         data: {
           datasets: [{
-            label: interval === 24 ? 'Дневные свечи' : 'Часовые свечи',
+            label: interval === 24 ? 'Дневные цены закрытия' : 'Часовые цены закрытия',
             data: allData,
-            color: {
-              up: '#4caf50',
-              down: '#f44336',
-              unchanged: '#999'
-            }
+            borderColor: '#007bff',
+            backgroundColor: 'rgba(0, 123, 255, 0.3)',
+            pointRadius: 2,
+            fill: true,
+            tension: 0.1,
           }]
         },
         options: {
@@ -120,7 +113,7 @@
         }
       });
 
-      status.textContent = `График построен (${interval === 24 ? 'дневные' : 'часовые'} свечи).`;
+      status.textContent = `График построен (${interval === 24 ? 'дневные' : 'часовые'} цены закрытия).`;
     }
   </script>
 
