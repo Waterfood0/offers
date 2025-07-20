@@ -4,35 +4,54 @@
   <meta charset="UTF-8">
   <title>Актуальная цена акции</title>
   <style>
-    body { font-family: sans-serif; padding: 20px; }
-    #price { font-size: 24px; color: green; }
+    body {
+      font-family: sans-serif;
+      padding: 30px;
+      background: #f5f5f5;
+    }
+    h2 {
+      margin-bottom: 20px;
+    }
+    #price {
+      font-size: 28px;
+      color: #2e7d32;
+      font-weight: bold;
+    }
   </style>
 </head>
 <body>
-  <h2>Цена акции AAPL (в реальном времени)</h2>
+  <h2>Цена акции <span id="ticker-label">AAPL</span> (в реальном времени)</h2>
   <div id="price">Загрузка...</div>
 
   <script>
-    async function getStockPrice(ticker) {
-      const proxyUrl = 'https://api.allorigins.win/get?url=';
-      const yahooUrl = `https://finance.yahoo.com/quote/${ticker}`;
+    async function fetchLivePrice(ticker) {
+      const proxy = 'https://api.allorigins.win/get?url=';
+      const url = `https://finance.yahoo.com/quote/${ticker}`;
+      const fullUrl = proxy + encodeURIComponent(url);
+
       try {
-        const response = await fetch(proxyUrl + encodeURIComponent(yahooUrl));
-        const data = await response.json();
+        const res = await fetch(fullUrl);
+        const data = await res.json();
         const html = data.contents;
 
-        // Парсим HTML вручную (ищем <fin-streamer>)
-        const priceMatch = html.match(/<fin-streamer[^>]*data-field="regularMarketPrice"[^>]*>([\d.,]+)<\/fin-streamer>/);
-        const price = priceMatch ? priceMatch[1] : 'Не найдено';
+        // Найдём цену из <fin-streamer data-field="regularMarketPrice">
+        const match = html.match(/<fin-streamer[^>]+data-field="regularMarketPrice"[^>]*>([\d.,]+)<\/fin-streamer>/);
+        const price = match ? match[1] : null;
 
-        document.getElementById('price').innerText = `${ticker}: $${price}`;
-      } catch (e) {
-        document.getElementById('price').innerText = 'Ошибка загрузки данных';
-        console.error(e);
+        if (price) {
+          document.getElementById('price').textContent = `$${price}`;
+        } else {
+          document.getElementById('price').textContent = 'Цена не найдена';
+        }
+      } catch (error) {
+        console.error('Ошибка при загрузке:', error);
+        document.getElementById('price').textContent = 'Ошибка загрузки';
       }
     }
 
-    getStockPrice('AAPL'); // можно поменять на 'MSFT', 'GOOG', и т.п.
+    const ticker = 'AAPL';
+    document.getElementById('ticker-label').textContent = ticker;
+    fetchLivePrice(ticker);
   </script>
 </body>
 </html>
