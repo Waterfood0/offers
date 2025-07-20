@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8">
-  <title>Актуальная цена акции</title>
+  <title>Цена акции СБЕР</title>
   <style>
     body {
       font-family: sans-serif;
@@ -20,38 +20,28 @@
   </style>
 </head>
 <body>
-  <h2>Цена акции <span id="ticker-label">AAPL</span> (в реальном времени)</h2>
+  <h2>Цена акции <span id="ticker-label">SBER</span> (Мосбиржа)</h2>
   <div id="price">Загрузка...</div>
 
   <script>
-    async function fetchLivePrice(ticker) {
-      const proxy = 'https://api.allorigins.win/get?url=';
-      const url = `https://finance.yahoo.com/quote/${ticker}`;
-      const fullUrl = proxy + encodeURIComponent(url);
-
+    async function fetchMOEXPrice(ticker) {
+      const url = `https://iss.moex.com/iss/engines/stock/markets/shares/securities/${ticker}.json`;
       try {
-        const res = await fetch(fullUrl);
-        const data = await res.json();
-        const html = data.contents;
+        const response = await fetch(url);
+        const data = await response.json();
 
-        // Найдём цену из <fin-streamer data-field="regularMarketPrice">
-        const match = html.match(/<fin-streamer[^>]+data-field="regularMarketPrice"[^>]*>([\d.,]+)<\/fin-streamer>/);
-        const price = match ? match[1] : null;
-
-        if (price) {
-          document.getElementById('price').textContent = `$${price}`;
-        } else {
-          document.getElementById('price').textContent = 'Цена не найдена';
-        }
+        // Цена последней сделки берётся из MARKETDATA -> LAST
+        const lastPrice = data.marketdata.data[0][8]; // индекс 8 = LAST
+        document.getElementById('price').textContent = `${lastPrice} ₽`;
       } catch (error) {
         console.error('Ошибка при загрузке:', error);
         document.getElementById('price').textContent = 'Ошибка загрузки';
       }
     }
 
-    const ticker = 'AAPL';
+    const ticker = 'SBER'; // можно заменить на 'GAZP', 'LKOH', и др.
     document.getElementById('ticker-label').textContent = ticker;
-    fetchLivePrice(ticker);
+    fetchMOEXPrice(ticker);
   </script>
 </body>
 </html>
