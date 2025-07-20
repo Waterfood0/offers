@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>Актуальная цена акции</title>
+  <style>
+    body { font-family: sans-serif; padding: 20px; }
+    #price { font-size: 24px; color: green; }
+  </style>
+</head>
+<body>
+  <h2>Цена акции AAPL (в реальном времени)</h2>
+  <div id="price">Загрузка...</div>
+
+  <script>
+    async function getStockPrice(ticker) {
+      const proxyUrl = 'https://api.allorigins.win/get?url=';
+      const yahooUrl = `https://finance.yahoo.com/quote/${ticker}`;
+      try {
+        const response = await fetch(proxyUrl + encodeURIComponent(yahooUrl));
+        const data = await response.json();
+        const html = data.contents;
+
+        // Парсим HTML вручную (ищем <fin-streamer>)
+        const priceMatch = html.match(/<fin-streamer[^>]*data-field="regularMarketPrice"[^>]*>([\d.,]+)<\/fin-streamer>/);
+        const price = priceMatch ? priceMatch[1] : 'Не найдено';
+
+        document.getElementById('price').innerText = `${ticker}: $${price}`;
+      } catch (e) {
+        document.getElementById('price').innerText = 'Ошибка загрузки данных';
+        console.error(e);
+      }
+    }
+
+    getStockPrice('AAPL'); // можно поменять на 'MSFT', 'GOOG', и т.п.
+  </script>
+</body>
+</html>
