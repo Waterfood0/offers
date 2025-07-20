@@ -1,37 +1,77 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-  <meta charset="UTF-8" />
-  <title>Цены закрытия SBER (2021-2025)</title>
-  <style>
-    body { font-family: sans-serif; max-width: 600px; margin: auto; padding: 20px; }
-    button { margin-right: 10px; padding: 8px 15px; cursor: pointer; }
-    #status { margin: 15px 0; }
-    ul { max-height: 500px; overflow-y: auto; padding-left: 20px; border: 1px solid #ddd; border-radius: 6px; }
-    li { margin-bottom: 4px; font-size: 16px; }
-  </style>
+<meta charset="UTF-8" />
+<title>Технический анализ SBER (часовой и дневной)</title>
+<style>
+  body { font-family: Arial, sans-serif; max-width: 900px; margin: auto; padding: 20px; }
+  button { margin-right: 10px; padding: 8px 15px; cursor: pointer; }
+  input { width: 80px; padding: 5px; margin-right: 10px; }
+  #status { margin: 10px 0; }
+  #recommendations { white-space: pre-wrap; background: #f0f0f0; padding: 15px; border-radius: 6px; margin-top: 15px; }
+  #techniques { background: #eef6ff; border-left: 4px solid #007bff; padding: 15px; margin-top: 30px; }
+  h2 { margin-top: 30px; }
+</style>
 </head>
 <body>
 
-  <h2>Цены закрытия SBER (2021-2025)</h2>
+<h1>Технический анализ SBER</h1>
 
-  <button onclick="loadPrices(24)">Дневные</button>
-  <button onclick="loadPrices(60)">Часовые</button>
+<div>
+  <button onclick="startAnalysis('60')">Часовой график</button>
+  <button onclick="startAnalysis('24')">Дневной график</button>
+</div>
 
-  <p id="status">Нажмите кнопку для загрузки данных</p>
+<div style="margin-top: 15px;">
+  <label>Комиссия %: <input type="number" id="commission" step="0.01" value="0.1"></label>
+  <label>Минимальная прибыль %: <input type="number" id="minProfit" step="0.01" value="0.3"></label>
+  <button onclick="runAnalysis()">Анализировать</button>
+</div>
 
-  <ul id="pricesList"></ul>
+<p id="status">Выберите график и нажмите "Анализировать"</p>
+
+<div id="recommendations"></div>
+
+<div id="techniques">
+<h2>О дневной торговле акциями</h2>
+<p>Дневной трейдинг (day trading) — это стиль, когда трейдеры открывают и закрывают позиции в течение одного торгового дня. Цель — заработать на небольших колебаниях цены, не оставляя сделку открытой на ночь, чтобы избежать рисков, связанных с новостями и изменениями за закрытые часы рынка.</p>
+
+<h3>Как работают дневные трейдеры:</h3>
+<ul>
+  <li><b>Выбор акций:</b> ликвидные и волатильные для максимума возможностей.</li>
+  <li><b>Технический анализ:</b> графики, свечные паттерны, уровни поддержки/сопротивления, объемы, индикаторы (SMA, RSI, MACD).</li>
+  <li><b>Стратегии:</b>
+    <ul>
+      <li>Скальпинг — много быстрых сделок с маленькой прибылью.</li>
+      <li>Торговля на пробое — вход при пробитии важного уровня.</li>
+      <li>Отскок — вход на касании поддержки/сопротивления.</li>
+      <li>Новостной трейдинг — сделки по важным новостям.</li>
+    </ul>
+  </li>
+  <li><b>Управление рисками:</b> стоп-лоссы, кредитное плечо, дневные лимиты убытков.</li>
+  <li><b>Психология:</b> дисциплина и контроль эмоций.</li>
+</ul>
+</div>
 
 <script>
-  const years = [2021, 2022, 2023, 2024, 2025];
-  const pricesList = document.getElementById('pricesList');
-  const status = document.getElementById('status');
+  let interval = '60'; // default to hourly
+  let candlesData = [];
+  let smaShort = [];
+  let smaLong = [];
 
-  function formatDate(dateStr) {
-    return dateStr.split('T')[0];
+  const years = [2021, 2022, 2023, 2024, 2025];
+  const ticker = 'SBER';
+
+  const status = document.getElementById('status');
+  const recDiv = document.getElementById('recommendations');
+
+  function startAnalysis(selectedInterval) {
+    interval = selectedInterval;
+    status.textContent = `Выбран интервал: ${interval === '24' ? 'Дневной' : 'Часовой'}`;
+    recDiv.textContent = '';
   }
 
-  async function fetchYearData(ticker, interval, year) {
+  async function fetchYearData(year) {
     const from = `${year}-01-01`;
     const till = `${year}-12-31`;
 
@@ -46,11 +86,19 @@
       const data = json.candles.data;
 
       const dateIdx = cols.indexOf('begin');
+      const openIdx = cols.indexOf('open');
+      const highIdx = cols.indexOf('high');
+      const lowIdx = cols.indexOf('low');
       const closeIdx = cols.indexOf('close');
+      const volumeIdx = cols.indexOf('volume');
 
       return data.map(row => ({
-        date: row[dateIdx],
-        close: row[closeIdx]
+        date: new Date(row[dateIdx]),
+        open: row[openIdx],
+        high: row[highIdx],
+        low: row[lowIdx],
+        close: row[closeIdx],
+        volume: row[volumeIdx]
       }));
     } catch(e) {
       console.error(`Ошибка загрузки данных за ${year}`, e);
@@ -58,30 +106,67 @@
     }
   }
 
-  async function loadPrices(interval) {
-    pricesList.innerHTML = '';
-    status.textContent = 'Загрузка данных... Пожалуйста, подождите.';
-    let allData = [];
-
-    for (const year of years) {
-      status.textContent = `Загрузка данных за ${year}...`;
-      const yearData = await fetchYearData('SBER', interval, year);
-      allData = allData.concat(yearData);
+  function calculateSMA(data, period) {
+    let sma = [];
+    for (let i = 0; i < data.length; i++) {
+      if (i < period - 1) {
+        sma.push(null);
+        continue;
+      }
+      let sum = 0;
+      for (let j = i - period + 1; j <= i; j++) {
+        sum += data[j].close;
+      }
+      sma.push(sum / period);
     }
-
-    if (allData.length === 0) {
-      status.textContent = 'Нет данных для отображения';
-      pricesList.innerHTML = '';
-      return;
-    }
-
-    status.textContent = `Загрузка завершена. Всего записей: ${allData.length}`;
-
-    pricesList.innerHTML = allData.map(item =>
-      `<li>${formatDate(item.date)}: ${item.close} ₽</li>`
-    ).join('');
+    return sma;
   }
-</script>
 
-</body>
-</html>
+  function findCrossovers(shortSMA, longSMA) {
+    let signals = [];
+    for (let i = 1; i < shortSMA.length; i++) {
+      if (shortSMA[i-1] === null || longSMA[i-1] === null) continue;
+      if (shortSMA[i-1] < longSMA[i-1] && shortSMA[i] > longSMA[i]) {
+        signals.push({ index: i, type: 'buy' });
+      } else if (shortSMA[i-1] > longSMA[i-1] && shortSMA[i] < longSMA[i]) {
+        signals.push({ index: i, type: 'sell' });
+      }
+    }
+    return signals;
+  }
+
+  function findLocalMin(data, startIndex, length) {
+    let min = data[startIndex].low;
+    for (let i = startIndex; i > startIndex - length && i >= 0; i--) {
+      if (data[i].low < min) min = data[i].low;
+    }
+    return min;
+  }
+
+  function findLocalMax(data, startIndex, length) {
+    let max = data[startIndex].high;
+    for (let i = startIndex; i > startIndex - length && i >= 0; i--) {
+      if (data[i].high > max) max = data[i].high;
+    }
+    return max;
+  }
+
+  function analyzeTrade(signal, commissionPct, minProfitPct) {
+    const idx = signal.index;
+    const type = signal.type;
+    const entryPrice = candlesData[idx].close;
+
+    // Стоп-лосс: 1.5% ниже (для покупки) или выше (для продажи) локального минимума/максимума за 10 свечей
+    const lookback = 10;
+    let stopLoss, profitTarget, riskPct, rewardPct;
+    if (type === 'buy') {
+      stopLoss = findLocalMin(candlesData, idx, lookback);
+      if (stopLoss >= entryPrice) stopLoss = entryPrice * 0.985; // если локальный минимум выше — ставим стоп чуть ниже входа
+      riskPct = ((entryPrice - stopLoss) / entryPrice) * 100;
+
+      profitTarget = entryPrice + riskPct * 2 * entryPrice / 100; // соотношение риск/прибыль 1:2
+      rewardPct = ((profitTarget - entryPrice) / entryPrice) * 100;
+    } else {
+      // Для короткой позиции наоборот
+      stopLoss = findLocalMax(candlesData, idx, lookback);
+      if (stop
