@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8">
-  <title>График цены акции (5 дней)</title>
+  <title>График цены SBER (последние 5 дней)</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
     body { font-family: sans-serif; padding: 30px; background: #f9f9f9; }
@@ -14,8 +14,16 @@
   <canvas id="chart"></canvas>
 
   <script>
-    async function fetchHistoricalData(ticker) {
-      const url = `https://iss.moex.com/iss/engines/stock/markets/shares/securities/${ticker}/candles.json?interval=24&limit=5`;
+    function formatDate(date) {
+      return date.toISOString().split("T")[0];
+    }
+
+    async function fetchRecentCandles(ticker) {
+      const today = new Date();
+      const todayStr = formatDate(today);
+
+      const url = `https://iss.moex.com/iss/engines/stock/markets/shares/securities/${ticker}/candles.json?interval=24&limit=5&till=${todayStr}&sort_order=desc`;
+
       try {
         const res = await fetch(url);
         const json = await res.json();
@@ -26,8 +34,11 @@
         const dateIndex = columns.indexOf("begin");
         const closeIndex = columns.indexOf("close");
 
-        const labels = data.map(row => row[dateIndex].split("T")[0]); // YYYY-MM-DD
-        const closes = data.map(row => row[closeIndex]);
+        // Переворачиваем массив, чтобы шло от старых к новым
+        const sortedData = data.reverse();
+
+        const labels = sortedData.map(row => row[dateIndex].split("T")[0]);
+        const closes = sortedData.map(row => row[closeIndex]);
 
         return { labels, closes };
 
@@ -38,7 +49,7 @@
     }
 
     async function drawChart() {
-      const { labels, closes } = await fetchHistoricalData("SBER");
+      const { labels, closes } = await fetchRecentCandles("SBER");
 
       const ctx = document.getElementById('chart').getContext('2d');
       new Chart(ctx, {
