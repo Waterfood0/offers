@@ -2,46 +2,74 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8">
-  <title>Цена акции СБЕР</title>
+  <title>График цены акции (5 дней)</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
-    body {
-      font-family: sans-serif;
-      padding: 30px;
-      background: #f5f5f5;
-    }
-    h2 {
-      margin-bottom: 20px;
-    }
-    #price {
-      font-size: 28px;
-      color: #2e7d32;
-      font-weight: bold;
-    }
+    body { font-family: sans-serif; padding: 30px; background: #f9f9f9; }
+    canvas { max-width: 800px; background: white; border-radius: 8px; padding: 10px; }
   </style>
 </head>
 <body>
-  <h2>Цена акции <span id="ticker-label">SBER</span> (Мосбиржа)</h2>
-  <div id="price">Загрузка...</div>
+  <h2>График цены акции SBER (последние 5 дней)</h2>
+  <canvas id="chart"></canvas>
 
   <script>
-    async function fetchMOEXPrice(ticker) {
-      const url = `https://iss.moex.com/iss/engines/stock/markets/shares/securities/${ticker}.json`;
+    async function fetchHistoricalData(ticker) {
+      const url = `https://iss.moex.com/iss/engines/stock/markets/shares/securities/${ticker}/candles.json?interval=24&limit=5`;
       try {
-        const response = await fetch(url);
-        const data = await response.json();
+        const res = await fetch(url);
+        const json = await res.json();
 
-        // Цена последней сделки берётся из MARKETDATA -> LAST
-        const lastPrice = data.marketdata.data[0][8]; // индекс 8 = LAST
-        document.getElementById('price').textContent = `${lastPrice} ₽`;
-      } catch (error) {
-        console.error('Ошибка при загрузке:', error);
-        document.getElementById('price').textContent = 'Ошибка загрузки';
+        const columns = json.candles.columns;
+        const data = json.candles.data;
+
+        const dateIndex = columns.indexOf("begin");
+        const closeIndex = columns.indexOf("close");
+
+        const labels = data.map(row => row[dateIndex].split("T")[0]); // YYYY-MM-DD
+        const closes = data.map(row => row[closeIndex]);
+
+        return { labels, closes };
+
+      } catch (e) {
+        console.error("Ошибка загрузки:", e);
+        return { labels: [], closes: [] };
       }
     }
 
-    const ticker = 'SBER'; // можно заменить на 'GAZP', 'LKOH', и др.
-    document.getElementById('ticker-label').textContent = ticker;
-    fetchMOEXPrice(ticker);
+    async function drawChart() {
+      const { labels, closes } = await fetchHistoricalData("SBER");
+
+      const ctx = document.getElementById('chart').getContext('2d');
+      new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: labels,
+          datasets: [{
+            label: 'Цена закрытия (₽)',
+            data: closes,
+            borderColor: 'blue',
+            backgroundColor: 'rgba(0,0,255,0.1)',
+            tension: 0.2,
+            pointRadius: 4
+          }]
+        },
+        options: {
+          responsive: true,
+          scales: {
+            x: {
+              title: { display: true, text: 'Дата' }
+            },
+            y: {
+              title: { display: true, text: 'Цена (₽)' },
+              beginAtZero: false
+            }
+          }
+        }
+      });
+    }
+
+    drawChart();
   </script>
 </body>
 </html>
