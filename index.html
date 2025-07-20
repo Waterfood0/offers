@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <title>Интерактивный график SBER (2007-2025)</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@1.2.1/dist/chartjs-plugin-zoom.min.js"></script>
   <style>
     body {
@@ -40,10 +41,6 @@
       const today = new Date();
       const endDate = formatDate(today);
 
-      // Мосбиржа ограничивает количество данных, сделаем несколько запросов по годам
-      // Для простоты сделаем один запрос на максимум 1000 свечей (примерно 4 года)
-      // Вариант: циклом загружать по частям (упрощаем, возьмём максимум)
-
       const url = `https://iss.moex.com/iss/engines/stock/markets/shares/boards/TQBR/securities/${ticker}/candles.json?interval=24&from=${startDate}&till=${endDate}&sort_order=asc&limit=1000`;
 
       try {
@@ -74,7 +71,7 @@
 
       const ctx = document.getElementById('chart').getContext('2d');
 
-      const chart = new Chart(ctx, {
+      new Chart(ctx, {
         type: 'line',
         data: {
           labels: labels,
