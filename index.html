@@ -2,68 +2,194 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8" />
-  <title>Последние 5 цен SBER</title>
+  <title>График свечей SBER (День / Час)</title>
   <style>
     body { font-family: sans-serif; padding: 20px; background: #f9f9f9; }
-    h2 { margin-bottom: 15px; }
-    ul { background: white; padding: 15px; border-radius: 8px; max-width: 300px; }
-    li { padding: 5px 0; font-size: 18px; }
+    #buttons { max-width: 300px; margin: 0 auto 20px; text-align: center; }
+    button {
+      padding: 10px 20px;
+      margin: 0 10px;
+      font-size: 16px;
+      cursor: pointer;
+      border-radius: 6px;
+      border: 1px solid #888;
+      background: #fff;
+      transition: background-color 0.3s;
+    }
+    button.active, button:hover {
+      background-color: #4bc0c0;
+      color: white;
+      border-color: #4bc0c0;
+    }
+    #chart-container {
+      max-width: 900px;
+      margin: auto;
+      background: white;
+      padding: 10px;
+      border-radius: 8px;
+      box-shadow: 0 0 10px #ccc;
+    }
   </style>
 </head>
 <body>
-  <h2>Последние 5 цен закрытия акции SBER (с 2020)</h2>
-  <ul id="prices">
-    <li>Загрузка...</li>
-  </ul>
+
+  <h2 style="text-align:center">Свечной график SBER с 2021 (День / Час)</h2>
+
+  <div id="buttons">
+    <button id="btn-day" class="active">Дневной</button>
+    <button id="btn-hour">Часовой</button>
+  </div>
+
+  <div id="chart-container">
+    <canvas id="chart"></canvas>
+  </div>
+
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- Адаптер даты для Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@2"></script>
+  <!-- Финансовый график -->
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-financial@3.4.0/dist/chartjs-chart-financial.min.js"></script>
 
   <script>
-    async function fetchRecentPrices(ticker) {
-      const fromDate = '2020-01-01';
-      const url = `https://iss.moex.com/iss/engines/stock/markets/shares/boards/TQBR/securities/${ticker}/candles.json?interval=24&from=${fromDate}&sort_order=asc&limit=100`;
+    const ctx = document.getElementById('chart').getContext('2d');
+
+    let chart = null;
+
+    // Функция форматирования даты для MOEX
+    function formatDate(date) {
+      return date.toISOString().split('T')[0];
+    }
+
+    // Получение данных с MOEX ISS API для свечей
+    // interval = 24 для дневных, 60 для часовых
+    async function fetchCandles(ticker, interval) {
+      const fromDate = '2021-01-01';
+      const today = new Date();
+      const tillDate = formatDate(today);
+
+      // MOEX API URL
+      const url = `https://iss.moex.com/iss/engines/stock/markets/shares/boards/TQBR/securities/${ticker}/candles.json?interval=${interval}&from=${fromDate}&till=${tillDate}&sort_order=asc&limit=1000`;
 
       try {
         const res = await fetch(url);
         const json = await res.json();
 
+        if (!json.candles || !json.candles.data) {
+          throw new Error('Нет данных');
+        }
+
         const columns = json.candles.columns;
         const data = json.candles.data;
 
-        if (!data || data.length === 0) {
-          throw new Error('Данные не найдены');
-        }
+        const beginIdx = columns.indexOf('begin');
+        const openIdx = columns.indexOf('open');
+        const highIdx = columns.indexOf('high');
+        const lowIdx = columns.indexOf('low');
+        const closeIdx = columns.indexOf('close');
 
-        const dateIndex = columns.indexOf("begin");
-        const closeIndex = columns.indexOf("close");
-
-        // Возьмём последние 5 записей из полученных данных
-        const last5 = data.slice(-5);
-
-        return last5.map(row => ({
-          date: row[dateIndex].split('T')[0],
-          close: row[closeIndex]
+        // Преобразуем данные в формат для chartjs-chart-financial
+        return data.map(row => ({
+          x: new Date(row[beginIdx]),
+          o: row[openIdx],
+          h: row[highIdx],
+          l: row[lowIdx],
+          c: row[closeIdx]
         }));
 
       } catch (e) {
         console.error(e);
-        return null;
+        return [];
       }
     }
 
-    async function showPrices() {
-      const ul = document.getElementById('prices');
-      ul.innerHTML = '<li>Загрузка...</li>';
+    async function drawChart(interval) {
+      const data = await fetchCandles('SBER', interval);
 
-      const prices = await fetchRecentPrices('SBER');
-
-      if (!prices) {
-        ul.innerHTML = '<li>Ошибка загрузки данных</li>';
-        return;
+      if (chart) {
+        chart.destroy();
       }
 
-      ul.innerHTML = prices.map(p => `<li>${p.date}: ${p.close} ₽</li>`).join('');
+      chart = new Chart(ctx, {
+        type: 'candlestick',
+        data: {
+          datasets: [{
+            label: interval === 24 ? 'Дневной график' : 'Часовой график',
+            data: data,
+            color: {
+              up: '#4caf50',
+              down: '#f44336',
+              unchanged: '#999'
+            }
+          }]
+        },
+        options: {
+          responsive: true,
+          interaction: {
+            mode: 'nearest',
+            intersect: false
+          },
+          plugins: {
+            legend: {
+              display: true
+            },
+            tooltip: {
+              enabled: true,
+              callbacks: {
+                label: ctx => {
+                  const d = ctx.raw;
+                  return `Открытие: ${d.o} ₽, Максимум: ${d.h} ₽, Минимум: ${d.l} ₽, Закрытие: ${d.c} ₽`;
+                }
+              }
+            }
+          },
+          scales: {
+            x: {
+              type: 'time',
+              time: {
+                tooltipFormat: 'dd MMM yyyy HH:mm',
+                unit: interval === 24 ? 'day' : 'hour',
+                displayFormats: {
+                  day: 'dd MMM yyyy',
+                  hour: 'dd MMM HH:mm'
+                }
+              },
+              title: {
+                display: true,
+                text: 'Дата'
+              }
+            },
+            y: {
+              title: {
+                display: true,
+                text: 'Цена (₽)'
+              },
+              beginAtZero: false
+            }
+          }
+        }
+      });
     }
 
-    showPrices();
+    // Обработчики кнопок
+    const btnDay = document.getElementById('btn-day');
+    const btnHour = document.getElementById('btn-hour');
+
+    btnDay.addEventListener('click', () => {
+      btnDay.classList.add('active');
+      btnHour.classList.remove('active');
+      drawChart(24);
+    });
+
+    btnHour.addEventListener('click', () => {
+      btnHour.classList.add('active');
+      btnDay.classList.remove('active');
+      drawChart(60);
+    });
+
+    // Рисуем по умолчанию дневной график
+    drawChart(24);
   </script>
+
 </body>
 </html>
