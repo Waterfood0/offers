@@ -2,87 +2,127 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8" />
-  <title>Все цены закрытия SBER 2021-2025</title>
+  <title>Свечной график SBER (2021-2025)</title>
   <style>
-    body { font-family: sans-serif; padding: 20px; max-width: 600px; margin: auto; }
+    body { font-family: sans-serif; padding: 20px; max-width: 900px; margin: auto; }
     button { margin-right: 10px; padding: 8px 15px; cursor: pointer; }
-    ul { max-height: 600px; overflow-y: auto; padding-left: 20px; border: 1px solid #ddd; border-radius: 6px; }
-    li { margin-bottom: 5px; font-size: 16px; }
+    #status { margin-bottom: 10px; }
   </style>
 </head>
 <body>
 
-  <h2>Все цены закрытия SBER (2021-2025)</h2>
+  <h2>Свечной график SBER (2021-2025)</h2>
 
   <div>
-    <button onclick="loadAllPrices(24)">Дневные</button>
-    <button onclick="loadAllPrices(60)">Часовые</button>
+    <button onclick="loadAndDraw(24)">Дневные</button>
+    <button onclick="loadAndDraw(60)">Часовые</button>
   </div>
 
-  <p id="status">Нажмите кнопку для загрузки данных</p>
+  <p id="status">Нажмите кнопку для загрузки и построения графика</p>
 
-  <ul id="pricesList"></ul>
+  <canvas id="chart" width="900" height="500"></canvas>
 
-<script>
-  const years = [2021, 2022, 2023, 2024, 2025];
-  const pricesList = document.getElementById('pricesList');
-  const status = document.getElementById('status');
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-financial@3.4.0/dist/chartjs-chart-financial.min.js"></script>
 
-  function formatDate(dateStr) {
-    return dateStr.split('T')[0];
-  }
+  <script>
+    const ctx = document.getElementById('chart').getContext('2d');
+    const status = document.getElementById('status');
+    let chart = null;
 
-  async function fetchYearData(ticker, interval, year) {
-    const from = `${year}-01-01`;
-    const till = `${year}-12-31`;
+    const years = [2021, 2022, 2023, 2024, 2025];
 
-    const url = `https://iss.moex.com/iss/engines/stock/markets/shares/boards/TQBR/securities/${ticker}/candles.json?interval=${interval}&from=${from}&till=${till}&sort_order=asc&limit=1000`;
+    async function fetchYearData(ticker, interval, year) {
+      const from = `${year}-01-01`;
+      const till = `${year}-12-31`;
 
-    try {
-      const res = await fetch(url);
-      const json = await res.json();
-      if (!json.candles || !json.candles.data) return [];
+      const url = `https://iss.moex.com/iss/engines/stock/markets/shares/boards/TQBR/securities/${ticker}/candles.json?interval=${interval}&from=${from}&till=${till}&sort_order=asc&limit=1000`;
 
-      const cols = json.candles.columns;
-      const data = json.candles.data;
+      try {
+        const res = await fetch(url);
+        const json = await res.json();
+        if (!json.candles || !json.candles.data) return [];
 
-      const dateIdx = cols.indexOf('begin');
-      const closeIdx = cols.indexOf('close');
+        const cols = json.candles.columns;
+        const data = json.candles.data;
 
-      return data.map(row => ({
-        date: row[dateIdx],
-        close: row[closeIdx]
-      }));
-    } catch(e) {
-      console.error(`Ошибка загрузки данных за ${year}`, e);
-      return [];
-    }
-  }
+        const dateIdx = cols.indexOf('begin');
+        const openIdx = cols.indexOf('open');
+        const highIdx = cols.indexOf('high');
+        const lowIdx = cols.indexOf('low');
+        const closeIdx = cols.indexOf('close');
 
-  async function loadAllPrices(interval) {
-    pricesList.innerHTML = '';
-    status.textContent = 'Загрузка данных... Пожалуйста, подождите.';
-    let allData = [];
-
-    for (const year of years) {
-      status.textContent = `Загрузка данных за ${year}...`;
-      const yearData = await fetchYearData('SBER', interval, year);
-      allData = allData.concat(yearData);
+        return data.map(row => ({
+          x: new Date(row[dateIdx]),
+          o: row[openIdx],
+          h: row[highIdx],
+          l: row[lowIdx],
+          c: row[closeIdx]
+        }));
+      } catch(e) {
+        console.error(`Ошибка загрузки данных за ${year}`, e);
+        return [];
+      }
     }
 
-    status.textContent = `Загрузка завершена. Всего записей: ${allData.length}`;
+    async function loadAndDraw(interval) {
+      status.textContent = 'Загрузка данных... Пожалуйста, подождите.';
+      let allData = [];
 
-    if (allData.length === 0) {
-      pricesList.innerHTML = '<li>Нет данных для отображения</li>';
-      return;
+      for (const year of years) {
+        status.textContent = `Загрузка данных за ${year}...`;
+        const yearData = await fetchYearData('SBER', interval, year);
+        allData = allData.concat(yearData);
+      }
+
+      status.textContent = `Загрузка завершена. Записей: ${allData.length}. Строим график...`;
+
+      if (chart) {
+        chart.destroy();
+      }
+
+      chart = new Chart(ctx, {
+        type: 'candlestick',
+        data: {
+          datasets: [{
+            label: interval === 24 ? 'Дневные свечи' : 'Часовые свечи',
+            data: allData,
+            color: {
+              up: '#4caf50',
+              down: '#f44336',
+              unchanged: '#999'
+            }
+          }]
+        },
+        options: {
+          responsive: true,
+          scales: {
+            x: {
+              type: 'time',
+              time: {
+                unit: interval === 24 ? 'day' : 'hour',
+                tooltipFormat: 'dd MMM yyyy HH:mm',
+                displayFormats: {
+                  day: 'dd MMM yyyy',
+                  hour: 'dd MMM HH:mm'
+                }
+              },
+              title: { display: true, text: 'Дата' }
+            },
+            y: {
+              beginAtZero: false,
+              title: { display: true, text: 'Цена (₽)' }
+            }
+          },
+          plugins: {
+            legend: { display: true }
+          }
+        }
+      });
+
+      status.textContent = `График построен (${interval === 24 ? 'дневные' : 'часовые'} свечи).`;
     }
-
-    // Отобразим список
-    pricesList.innerHTML = allData.map(item =>
-      `<li>${formatDate(item.date)}: ${item.close} ₽</li>`
-    ).join('');
-  }
-</script>
+  </script>
 
 </body>
 </html>
