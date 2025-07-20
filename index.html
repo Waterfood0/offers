@@ -2,147 +2,68 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8" />
-  <title>График SBER (2020 - настоящее время)</title>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@2"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@1.2.1/dist/chartjs-plugin-zoom.min.js"></script>
+  <title>Последние 5 цен SBER</title>
   <style>
-    body {
-      font-family: sans-serif;
-      padding: 20px;
-      background: #fafafa;
-    }
-    #chart-container {
-      max-width: 900px;
-      margin: auto;
-      background: white;
-      padding: 10px;
-      border-radius: 8px;
-      box-shadow: 0 0 10px #ccc;
-    }
+    body { font-family: sans-serif; padding: 20px; background: #f9f9f9; }
+    h2 { margin-bottom: 15px; }
+    ul { background: white; padding: 15px; border-radius: 8px; max-width: 300px; }
+    li { padding: 5px 0; font-size: 18px; }
   </style>
 </head>
 <body>
-  <h2>График цены акции SBER (2020 - настоящее время)</h2>
-  <div id="chart-container">
-    <canvas id="chart"></canvas>
-  </div>
+  <h2>Последние 5 цен закрытия акции SBER</h2>
+  <ul id="prices">
+    <li>Загрузка...</li>
+  </ul>
 
   <script>
-    function formatDate(date) {
-      return date.toISOString().split("T")[0];
-    }
-
-    async function fetchCandles(ticker) {
-      const startDate = '2020-01-01';
-      const today = new Date();
-      const endDate = formatDate(today);
-
-      const url = `https://iss.moex.com/iss/engines/stock/markets/shares/boards/TQBR/securities/${ticker}/candles.json?interval=24&from=${startDate}&till=${endDate}&sort_order=asc&limit=1000`;
+    async function fetchLast5Prices(ticker) {
+      const url = `https://iss.moex.com/iss/engines/stock/markets/shares/boards/TQBR/securities/${ticker}/candles.json?interval=24&limit=5&sort_order=desc`;
 
       try {
         const res = await fetch(url);
         const json = await res.json();
 
-        if (!json.candles.data) throw new Error('Нет данных');
-
         const columns = json.candles.columns;
         const data = json.candles.data;
+
+        if (!data || data.length === 0) {
+          throw new Error('Данные не найдены');
+        }
 
         const dateIndex = columns.indexOf("begin");
         const closeIndex = columns.indexOf("close");
 
-        const labels = data.map(row => row[dateIndex].split("T")[0]);
-        const closes = data.map(row => row[closeIndex]);
+        // Данные приходят в обратном порядке (сначала последний)
+        // Чтобы вывести по хронологии - перевернем массив
+        const last5 = data.slice(0, 5).reverse();
 
-        return { labels, closes };
+        return last5.map(row => ({
+          date: row[dateIndex].split('T')[0],
+          close: row[closeIndex]
+        }));
 
       } catch (e) {
-        console.error('Ошибка загрузки:', e);
-        return { labels: [], closes: [] };
+        console.error(e);
+        return null;
       }
     }
 
-    async function drawChart() {
-      const { labels, closes } = await fetchCandles('SBER');
+    async function showPrices() {
+      const ul = document.getElementById('prices');
+      ul.innerHTML = '<li>Загрузка...</li>';
 
-      const ctx = document.getElementById('chart').getContext('2d');
+      const prices = await fetchLast5Prices('SBER');
 
-      new Chart(ctx, {
-        type: 'line',
-        data: {
-          labels: labels,
-          datasets: [{
-            label: 'Цена закрытия (₽)',
-            data: closes,
-            borderColor: 'rgb(75, 192, 192)',
-            backgroundColor: 'rgba(75, 192, 192, 0.2)',
-            pointRadius: 0,
-            fill: true,
-            tension: 0.1,
-          }]
-        },
-        options: {
-          responsive: true,
-          interaction: {
-            mode: 'nearest',
-            intersect: false,
-          },
-          plugins: {
-            tooltip: {
-              enabled: true,
-              mode: 'nearest',
-              intersect: false,
-              callbacks: {
-                label: ctx => `Цена: ${ctx.parsed.y} ₽`
-              }
-            },
-            zoom: {
-              zoom: {
-                wheel: {
-                  enabled: true,
-                },
-                pinch: {
-                  enabled: true
-                },
-                mode: 'x',
-              },
-              pan: {
-                enabled: true,
-                mode: 'x',
-              }
-            }
-          },
-          scales: {
-            x: {
-              type: 'time',
-              time: {
-                parser: 'yyyy-MM-dd',
-                tooltipFormat: 'dd MMM yyyy',
-                unit: 'month',
-                displayFormats: {
-                  month: 'MMM yyyy'
-                }
-              },
-              title: {
-                display: true,
-                text: 'Дата'
-              }
-            },
-            y: {
-              title: {
-                display: true,
-                text: 'Цена (₽)'
-              },
-              beginAtZero: false
-            }
-          }
-        },
-        plugins: [Chart.registry.getPlugin('zoom')]
-      });
+      if (!prices) {
+        ul.innerHTML = '<li>Ошибка загрузки данных</li>';
+        return;
+      }
+
+      ul.innerHTML = prices.map(p => `<li>${p.date}: ${p.close} ₽</li>`).join('');
     }
 
-    drawChart();
+    showPrices();
   </script>
 </body>
 </html>
