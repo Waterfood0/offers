@@ -41,7 +41,7 @@
           volume: row[idx('volume')]
         }));
       } catch (e) {
-        console.error(Ошибка загрузки ${ticker}:, e);
+        console.error(`Ошибка загрузки ${ticker}:`, e);
         return [];
       }
     }
