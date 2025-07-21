@@ -1,91 +1,63 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-<meta charset="UTF-8" />
-<title>Технический анализ (EMA + MACD)</title>
-<style>
-  body { font-family: Arial, sans-serif; max-width: 700px; margin: 20px auto; padding: 10px; }
-  button { margin-right: 10px; padding: 7px 14px; cursor: pointer; }
-  input, select { padding: 5px; margin-right: 10px; }
-  #status { margin: 15px 0; font-weight: bold; }
-  #results { white-space: pre-wrap; background: #f9f9f9; padding: 15px; border-radius: 6px; min-height: 200px; }
-</style>
+  <meta charset="UTF-8" />
+  <title>Актуальные сигналы (EMA + MACD)</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 900px; margin: 20px auto; padding: 10px; }
+    button { margin: 5px 5px 10px 0; padding: 6px 12px; cursor: pointer; }
+    #allSignals, #results {
+      white-space: pre-wrap;
+      background: #f9f9f9;
+      padding: 15px;
+      border-radius: 6px;
+      margin-top: 10px;
+    }
+    h2 { margin-bottom: 5px; }
+    .section { margin-top: 20px; }
+  </style>
 </head>
 <body>
 
-<h2>Технический анализ (EMA + MACD)</h2>
+<h2>📊 Актуальные сигналы этого месяца (все акции)</h2>
+<div id="allSignals">Загрузка...</div>
 
-<div>
-  <label for="tickerSelect">Тикер:
-    <select id="tickerSelect">
-      <option value="SBER">SBER</option>
-      <option value="GAZP">GAZP</option>
-      <option value="LKOH">LKOH</option>
-      <option value="MGNT">MGNT</option>
-      <option value="YNDX">YNDX</option>
-    </select>
-  </label>
+<div class="section">
+  <h3>Выберите тикер для просмотра:</h3>
+  <div id="tickerButtons"></div>
+  <div id="results"></div>
 </div>
-
-<div style="margin-top:15px;">
-  <button onclick="selectInterval('60')">Часовой</button>
-  <button onclick="selectInterval('24')">Дневной</button>
-</div>
-
-<div style="margin-top:15px;">
-  <label>Комиссия %: <input type="number" id="commission" step="0.01" value="0.1"></label>
-  <label>Мин. прибыль %: <input type="number" id="minProfit" step="0.01" value="0.3"></label>
-  <button onclick="runAnalysis()">Запустить анализ</button>
-</div>
-
-<p id="status">Выберите интервал и нажмите "Запустить анализ"</p>
-
-<div id="results"></div>
 
 <script>
-let interval = '60'; // по умолчанию часовой
-let candlesData = [];
+const tickers = ['SBER', 'GAZP', 'LKOH', 'MGNT', 'YNDX'];
+let interval = '60';
+let allData = {};
+let allActiveSignals = {};
 
-function selectInterval(val) {
-  interval = val;
-  document.getElementById('status').textContent = `Выбран интервал: ${interval === '24' ? 'Дневной' : 'Часовой'}`;
-  document.getElementById('results').textContent = '';
-}
+async function fetchDataForTicker(ticker) {
+  const candles = [];
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const url = `https://iss.moex.com/iss/engines/stock/markets/shares/boards/TQBR/securities/${ticker}/candles.json?interval=${interval}&from=${currentYear}-01-01&till=${currentYear}-12-31&sort_order=asc&limit=1000`;
+  try {
+    const res = await fetch(url);
+    const json = await res.json();
+    if (!json.candles?.data) return [];
+    const cols = json.candles.columns;
+    const data = json.candles.data;
+    const idx = (name) => cols.indexOf(name);
 
-async function fetchData() {
-  candlesData = [];
-  const years = [2023, 2024, 2025];
-  const ticker = document.getElementById('tickerSelect').value;
-
-  for (const year of years) {
-    const from = `${year}-01-01`;
-    const till = `${year}-12-31`;
-    const url = `https://iss.moex.com/iss/engines/stock/markets/shares/boards/TQBR/securities/${ticker}/candles.json?interval=${interval}&from=${from}&till=${till}&sort_order=asc&limit=1000`;
-    try {
-      const res = await fetch(url);
-      const json = await res.json();
-      if (!json.candles || !json.candles.data) continue;
-      const cols = json.candles.columns;
-      const data = json.candles.data;
-      const dateIdx = cols.indexOf('begin');
-      const openIdx = cols.indexOf('open');
-      const highIdx = cols.indexOf('high');
-      const lowIdx = cols.indexOf('low');
-      const closeIdx = cols.indexOf('close');
-      const volumeIdx = cols.indexOf('volume');
-
-      const yearData = data.map(row => ({
-        date: new Date(row[dateIdx]),
-        open: row[openIdx],
-        high: row[highIdx],
-        low: row[lowIdx],
-        close: row[closeIdx],
-        volume: row[volumeIdx]
-      }));
-      candlesData = candlesData.concat(yearData);
-    } catch(e) {
-      console.error(`Ошибка загрузки данных за ${year}`, e);
-    }
+    return data.map(row => ({
+      date: new Date(row[idx('begin')]),
+      open: row[idx('open')],
+      high: row[idx('high')],
+      low: row[idx('low')],
+      close: row[idx('close')],
+      volume: row[idx('volume')]
+    }));
+  } catch (e) {
+    console.error(`Ошибка загрузки ${ticker}`, e);
+    return [];
   }
 }
 
@@ -93,155 +65,135 @@ function calculateEMA(data, period) {
   const k = 2 / (period + 1);
   const emaArray = [];
   let emaPrev = data[0].close;
-
-  for(let i = 0; i < data.length; i++) {
-    if(i === 0) {
-      emaArray.push(emaPrev);
-    } else {
-      const emaCurrent = data[i].close * k + emaPrev * (1 - k);
-      emaArray.push(emaCurrent);
-      emaPrev = emaCurrent;
-    }
+  for (let i = 0; i < data.length; i++) {
+    emaPrev = i === 0 ? emaPrev : data[i].close * k + emaPrev * (1 - k);
+    emaArray.push(emaPrev);
   }
   return emaArray;
 }
 
-function calculateMACD(data, fastPeriod = 6, slowPeriod = 13, signalPeriod = 9) {
-  const emaFast = calculateEMA(data, fastPeriod);
-  const emaSlow = calculateEMA(data, slowPeriod);
-  const macdLine = [];
-
-  for(let i = 0; i < data.length; i++) {
-    macdLine.push(emaFast[i] - emaSlow[i]);
-  }
-
-  const signalLine = calculateEMA(macdLine.map(val => ({close: val})), signalPeriod);
-  const histogram = [];
-
-  for(let i = 0; i < data.length; i++) {
-    histogram.push(macdLine[i] - signalLine[i]);
-  }
-
-  return {macdLine, signalLine, histogram};
+function calculateMACD(data, fast = 6, slow = 13, signal = 9) {
+  const emaFast = calculateEMA(data, fast);
+  const emaSlow = calculateEMA(data, slow);
+  const macdLine = emaFast.map((v, i) => v - emaSlow[i]);
+  const signalLine = calculateEMA(macdLine.map(v => ({ close: v })), signal);
+  return { macdLine, signalLine };
 }
 
-function findSignals(emaShort, emaLong, macdLine, signalLine) {
+function findSignals(data, emaShort, emaLong, macdLine, signalLine) {
   const signals = [];
-  for(let i = 1; i < emaShort.length; i++) {
-    if(emaShort[i-1] === undefined || emaLong[i-1] === undefined) continue;
-    if(macdLine[i-1] === undefined || signalLine[i-1] === undefined) continue;
-
-    const emaCrossUp = (emaShort[i-1] < emaLong[i-1]) && (emaShort[i] > emaLong[i]);
-    const emaCrossDown = (emaShort[i-1] > emaLong[i-1]) && (emaShort[i] < emaLong[i]);
-
-    const macdCrossUp = (macdLine[i-1] < signalLine[i-1]) && (macdLine[i] > signalLine[i]);
-    const macdCrossDown = (macdLine[i-1] > signalLine[i-1]) && (macdLine[i] < signalLine[i]);
-
-    if(emaCrossUp || macdCrossUp) {
-      signals.push({index: i, type: 'buy'});
-    } else if(emaCrossDown || macdCrossDown) {
-      signals.push({index: i, type: 'sell'});
-    }
+  for (let i = 1; i < emaShort.length; i++) {
+    const emaUp = emaShort[i - 1] < emaLong[i - 1] && emaShort[i] > emaLong[i];
+    const emaDown = emaShort[i - 1] > emaLong[i - 1] && emaShort[i] < emaLong[i];
+    const macdUp = macdLine[i - 1] < signalLine[i - 1] && macdLine[i] > signalLine[i];
+    const macdDown = macdLine[i - 1] > signalLine[i - 1] && macdLine[i] < signalLine[i];
+    if (emaUp || macdUp) signals.push({ index: i, type: 'buy' });
+    else if (emaDown || macdDown) signals.push({ index: i, type: 'sell' });
   }
   return signals;
 }
 
-function findLocalMin(data, index, lookback = 10) {
-  let minVal = data[index].low;
-  for(let i = Math.max(0, index - lookback); i < index; i++) {
-    if(data[i].low < minVal) minVal = data[i].low;
-  }
-  return minVal;
+function findLocalMin(data, i, lookback = 10) {
+  return Math.min(...data.slice(Math.max(0, i - lookback), i).map(d => d.low));
 }
 
-function findLocalMax(data, index, lookback = 10) {
-  let maxVal = data[index].high;
-  for(let i = Math.max(0, index - lookback); i < index; i++) {
-    if(data[i].high > maxVal) maxVal = data[i].high;
-  }
-  return maxVal;
+function findLocalMax(data, i, lookback = 10) {
+  return Math.max(...data.slice(Math.max(0, i - lookback), i).map(d => d.high));
 }
 
-function findExitDate(data, startIdx, targetPrice, stopPrice, type) {
-  for(let i = startIdx + 1; i < data.length; i++) {
-    if(type === 'buy') {
-      if(data[i].low <= stopPrice) return {date: data[i].date, reason: 'Стоп-лосс достигнут'};
-      if(data[i].high >= targetPrice) return {date: data[i].date, reason: 'Тейк-профит достигнут'};
+function findExit(data, startIdx, tp, sl, type) {
+  for (let i = startIdx + 1; i < data.length; i++) {
+    if (type === 'buy') {
+      if (data[i].low <= sl) return { date: data[i].date, reason: 'Стоп-лосс' };
+      if (data[i].high >= tp) return { date: data[i].date, reason: 'Тейк-профит' };
     } else {
-      if(data[i].high >= stopPrice) return {date: data[i].date, reason: 'Стоп-лосс достигнут'};
-      if(data[i].low <= targetPrice) return {date: data[i].date, reason: 'Тейк-профит достигнут'};
+      if (data[i].high >= sl) return { date: data[i].date, reason: 'Стоп-лосс' };
+      if (data[i].low <= tp) return { date: data[i].date, reason: 'Тейк-профит' };
     }
   }
-  return {date: null, reason: 'Выход не достигнут'};
+  return { date: null };
 }
 
-function analyzeSignals(signals, commissionPct, minProfitPct) {
-  const lookback = 10;
-  let output = '';
+function isCurrentMonth(date) {
+  const now = new Date();
+  return date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth();
+}
 
-  if(signals.length === 0) {
-    return 'Сигналов для входа не обнаружено.';
-  }
+function analyze(data, signals) {
+  const results = [];
+  for (const s of signals) {
+    const i = s.index;
+    const entry = data[i].close;
+    const date = data[i].date;
+    if (!isCurrentMonth(date)) continue;
 
-  for(const s of signals) {
-    const idx = s.index;
-    const type = s.type;
-    const entryPrice = candlesData[idx].close;
-    let stopLoss, riskPct, profitTarget, rewardPct;
-
-    if(type === 'buy') {
-      stopLoss = findLocalMin(candlesData, idx, lookback);
-      if(stopLoss >= entryPrice) stopLoss = entryPrice * 0.985;
-      riskPct = ((entryPrice - stopLoss) / entryPrice) * 100;
-      profitTarget = entryPrice + riskPct * 2 * entryPrice / 100;
-      rewardPct = ((profitTarget - entryPrice) / entryPrice) * 100;
+    let stop, tp;
+    if (s.type === 'buy') {
+      stop = findLocalMin(data, i);
+      stop = stop >= entry ? entry * 0.985 : stop;
+      const risk = entry - stop;
+      tp = entry + risk * 2;
     } else {
-      stopLoss = findLocalMax(candlesData, idx, lookback);
-      if(stopLoss <= entryPrice) stopLoss = entryPrice * 1.015;
-      riskPct = ((stopLoss - entryPrice) / entryPrice) * 100;
-      profitTarget = entryPrice - riskPct * 2 * entryPrice / 100;
-      rewardPct = ((entryPrice - profitTarget) / entryPrice) * 100;
+      stop = findLocalMax(data, i);
+      stop = stop <= entry ? entry * 1.015 : stop;
+      const risk = stop - entry;
+      tp = entry - risk * 2;
     }
 
-    const totalCosts = commissionPct * 2;
-    if (rewardPct - totalCosts < minProfitPct) continue;
-
-    const exitInfo = findExitDate(candlesData, idx, profitTarget, stopLoss, type);
-    if (!exitInfo.date) {
-      output += `Актуальный сигнал #${idx} (${type.toUpperCase()}):\n` +
-                `Дата входа: ${candlesData[idx].date.toISOString().slice(0,10)}\n` +
-                `Цена входа: ${entryPrice.toFixed(2)}\n` +
-                `Стоп-лосс: ${stopLoss.toFixed(2)} (${riskPct.toFixed(2)}%)\n` +
-                `Тейк-профит: ${profitTarget.toFixed(2)} (${rewardPct.toFixed(2)}%)\n\n`;
+    const exit = findExit(data, i, tp, stop, s.type);
+    if (!exit.date) {
+      results.push({
+        date: date.toISOString().slice(0, 10),
+        entry: entry.toFixed(2),
+        stop: stop.toFixed(2),
+        tp: tp.toFixed(2),
+        type: s.type
+      });
     }
   }
-
-  return output || 'Актуальных сигналов не найдено.';
+  return results;
 }
 
-async function runAnalysis() {
-  document.getElementById('status').textContent = 'Загрузка данных...';
-  document.getElementById('results').textContent = '';
-  await fetchData();
+function renderSignalBlock(ticker, signals) {
+  if (signals.length === 0) return `${ticker}: Нет актуальных сигналов\n`;
+  return signals.map(s =>
+    `${ticker} | ${s.type.toUpperCase()} | ${s.date}\nЦена: ${s.entry}, Стоп: ${s.stop}, Цель: ${s.tp}\n`
+  ).join('\n');
+}
 
-  if (candlesData.length === 0) {
-    document.getElementById('status').textContent = 'Данные не загружены.';
-    return;
+async function init() {
+  const allOutput = [];
+  const buttonWrap = document.getElementById('tickerButtons');
+  const allDiv = document.getElementById('allSignals');
+  allDiv.textContent = 'Загрузка...';
+
+  for (const ticker of tickers) {
+    const data = await fetchDataForTicker(ticker);
+    allData[ticker] = data;
+
+    const emaShort = calculateEMA(data, 5);
+    const emaLong = calculateEMA(data, 15);
+    const { macdLine, signalLine } = calculateMACD(data);
+
+    const signals = findSignals(data, emaShort, emaLong, macdLine, signalLine);
+    const active = analyze(data, signals);
+
+    allActiveSignals[ticker] = active;
+    allOutput.push(renderSignalBlock(ticker, active));
+
+    const btn = document.createElement('button');
+    btn.textContent = ticker;
+    btn.onclick = () => {
+      const out = renderSignalBlock(ticker, active);
+      document.getElementById('results').textContent = out || 'Нет сигналов';
+    };
+    buttonWrap.appendChild(btn);
   }
 
-  const commissionPct = parseFloat(document.getElementById('commission').value) || 0;
-  const minProfitPct = parseFloat(document.getElementById('minProfit').value) || 0;
-
-  const emaShort = calculateEMA(candlesData, 5);
-  const emaLong = calculateEMA(candlesData, 15);
-  const {macdLine, signalLine} = calculateMACD(candlesData);
-
-  const signals = findSignals(emaShort, emaLong, macdLine, signalLine);
-  const analysisText = analyzeSignals(signals, commissionPct, minProfitPct);
-
-  document.getElementById('results').textContent = analysisText;
-  document.getElementById('status').textContent = 'Анализ завершён.';
+  allDiv.textContent = allOutput.join('\n');
 }
+
+init();
 </script>
 
 </body>
