@@ -164,8 +164,8 @@ function analyzeSignals(signals, commissionPct, minProfitPct) {
       rewardPct = ((entryPrice - profitTarget) / entryPrice) * 100;
     }
 
-    // Учитываем комиссию
-    const totalCosts = commissionPct * 2; // вход + выход
+    // Учитываем комиссию (вход и выход)
+    const totalCosts = commissionPct * 2;
     if(rewardPct < minProfitPct || rewardPct < totalCosts) {
       output += `\nСигнал на ${type.toUpperCase()} (${candlesData[idx].date.toLocaleString()}): прибыль (${rewardPct.toFixed(2)}%) меньше минимальной или не покрывает комиссию.\n`;
       continue;
@@ -182,3 +182,29 @@ function analyzeSignals(signals, commissionPct, minProfitPct) {
 
   return output || 'Сигналов для входа не обнаружено.';
 }
+
+async function runAnalysis() {
+  document.getElementById('status').textContent = 'Загрузка данных... Подождите.';
+  document.getElementById('results').textContent = '';
+  await fetchData();
+  if(candlesData.length === 0) {
+    document.getElementById('status').textContent = 'Данные не загружены.';
+    return;
+  }
+  document.getElementById('status').textContent = `Данные загружены: ${candlesData.length} свечей. Анализируем...`;
+
+  const commission = parseFloat(document.getElementById('commission').value) || 0;
+  const minProfit = parseFloat(document.getElementById('minProfit').value) || 0;
+
+  const sma10 = calculateSMA(candlesData, 10);
+  const sma50 = calculateSMA(candlesData, 50);
+  const signals = findCrossovers(sma10, sma50);
+  const analysis = analyzeSignals(signals, commission, minProfit);
+
+  document.getElementById('results').textContent = analysis;
+  document.getElementById('status').textContent = 'Анализ завершён.';
+}
+</script>
+
+</body>
+</html>
