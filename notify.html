@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>Тест уведомлений</title>
+</head>
+<body>
+<h2>Проверка системного уведомления</h2>
+<p>Через 5 секунд будет уведомление.</p>
+
+<script>
+  async function requestAndShowNotification() {
+    const permission = await Notification.requestPermission();
+    console.log('Разрешение:', permission);
+
+    if (permission === 'granted') {
+      new Notification('Уведомление работает ✅', {
+        body: 'Тест: сделка по акции SBER',
+        icon: 'https://cdn-icons-png.flaticon.com/512/2889/2889739.png'
+      });
+    } else {
+      alert('Разрешение на уведомления не получено');
+    }
+  }
+
+  setTimeout(() => {
+    requestAndShowNotification();
+  }, 5000);
+</script>
+</body>
+</html>
