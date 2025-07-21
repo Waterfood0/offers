@@ -32,13 +32,18 @@
 
 <script>
 let interval = '60'; // по умолчанию часовой
-let allData = {}; // ключ - тикер, значение - данные свечей
+let candlesData = [];
 
-const tickers = ['SBER', 'GAZP', 'LKOH', 'TATN', 'GMKN'];
+function selectInterval(val) {
+  interval = val;
+  document.getElementById('status').textContent = `Выбран интервал: ${interval === '24' ? 'Дневной' : 'Часовой'}`;
+  document.getElementById('results').textContent = '';
+}
 
-async function fetchData(ticker) {
-  let candlesData = [];
+async function fetchData() {
+  candlesData = [];
   const years = [2021, 2022, 2023, 2024, 2025];
+  const ticker = 'SBER';
 
   for (const year of years) {
     const from = `${year}-01-01`;
@@ -67,10 +72,9 @@ async function fetchData(ticker) {
       }));
       candlesData = candlesData.concat(yearData);
     } catch(e) {
-      console.error(`Ошибка загрузки данных за ${year} для ${ticker}`, e);
+      console.error(`Ошибка загрузки данных за ${year}`, e);
     }
   }
-  return candlesData;
 }
 
 // EMA расчет
@@ -92,8 +96,7 @@ function calculateEMA(data, period) {
 }
 
 // MACD расчет
-// Измененные периоды EMA и MACD
-function calculateMACD(data, fastPeriod = 6, slowPeriod = 13, signalPeriod = 9) {
+function calculateMACD(data, fastPeriod = 12, slowPeriod = 26, signalPeriod = 9) {
   const emaFast = calculateEMA(data, fastPeriod);
   const emaSlow = calculateEMA(data, slowPeriod);
   const macdLine = [];
@@ -112,25 +115,24 @@ function calculateMACD(data, fastPeriod = 6, slowPeriod = 13, signalPeriod = 9) 
   return {macdLine, signalLine, histogram};
 }
 
-// Более мягкий поиск сигналов: если пересекается EMA или MACD, сигнал
+// Поиск сигналов пересечения EMA (5 и 15) и MACD (пересечение macdLine и signalLine)
 function findSignals(emaShort, emaLong, macdLine, signalLine) {
   const signals = [];
   for(let i = 1; i < emaShort.length; i++) {
     if(emaShort[i-1] === undefined || emaLong[i-1] === undefined) continue;
     if(macdLine[i-1] === undefined || signalLine[i-1] === undefined) continue;
 
+    // Покупка: EMA5 пересекает EMA15 вверх И MACD пересекает сигнальную линию вверх
     const emaCrossUp = (emaShort[i-1] < emaLong[i-1]) && (emaShort[i] > emaLong[i]);
-    const emaCrossDown = (emaShort[i-1] > emaLong[i-1]) && (emaShort[i] < emaLong[i]);
-
     const macdCrossUp = (macdLine[i-1] < signalLine[i-1]) && (macdLine[i] > signalLine[i]);
+
+    // Продажа: EMA5 пересекает EMA15 вниз И MACD пересекает сигнальную линию вниз
+    const emaCrossDown = (emaShort[i-1] > emaLong[i-1]) && (emaShort[i] < emaLong[i]);
     const macdCrossDown = (macdLine[i-1] > signalLine[i-1]) && (macdLine[i] < signalLine[i]);
 
-    // Сигнал покупки, если пересекли EMA вверх ИЛИ MACD вверх
-    if(emaCrossUp || macdCrossUp) {
+    if(emaCrossUp && macdCrossUp) {
       signals.push({index: i, type: 'buy'});
-    }
-    // Сигнал продажи, если пересекли EMA вниз ИЛИ MACD вниз
-    else if(emaCrossDown || macdCrossDown) {
+    } else if(emaCrossDown && macdCrossDown) {
       signals.push({index: i, type: 'sell'});
     }
   }
@@ -169,14 +171,13 @@ function findExitDate(data, startIdx, targetPrice, stopPrice, type) {
 }
 
 // Анализ сигналов, с учетом комиссии и минимальной желаемой прибыли
-function analyzeSignals(candlesData, signals, commissionPct, minProfitPct) {
+function analyzeSignals(signals, commissionPct, minProfitPct) {
   const lookback = 10;
   let output = '';
-  let activeSignals = [];
 
   if(signals.length === 0) {
-    output = 'Сигналов для входа не обнаружено.\n\n';
-    return {text: output, active: activeSignals};
+    output = 'Сигналов для входа не обнаружено.';
+    return output;
   }
 
   for(const s of signals) {
@@ -187,19 +188,19 @@ function analyzeSignals(candlesData, signals, commissionPct, minProfitPct) {
 
     if(type === 'buy') {
       stopLoss = findLocalMin(candlesData, idx, lookback);
-      if(stopLoss >= entryPrice) stopLoss = entryPrice * 0.985;
+      if(stopLoss >= entryPrice) stopLoss = entryPrice * 0.985; // минимальный стоп
       riskPct = ((entryPrice - stopLoss) / entryPrice) * 100;
       profitTarget = entryPrice + riskPct * 2 * entryPrice / 100;
       rewardPct = ((profitTarget - entryPrice) / entryPrice) * 100;
     } else {
       stopLoss = findLocalMax(candlesData, idx, lookback);
-      if(stopLoss <= entryPrice) stopLoss = entryPrice * 1.015;
+      if(stopLoss <= entryPrice) stopLoss = entryPrice * 1.015; // минимальный стоп для продажи
       riskPct = ((stopLoss - entryPrice) / entryPrice) * 100;
       profitTarget = entryPrice - riskPct * 2 * entryPrice / 100;
       rewardPct = ((entryPrice - profitTarget) / entryPrice) * 100;
     }
 
-    const totalCosts = commissionPct * 2;
+    const totalCosts = commissionPct * 2; // комиссия за вход и выход
     if (rewardPct - totalCosts < minProfitPct) {
       output += `Сигнал #${idx} (${type.toUpperCase()}): Прибыль ниже минимальной с учётом комиссии. Пропускаем.\n\n`;
       continue;
@@ -214,68 +215,33 @@ function analyzeSignals(candlesData, signals, commissionPct, minProfitPct) {
               `Стоп-лосс: ${stopLoss.toFixed(2)} (${riskPct.toFixed(2)}%)\n` +
               `Тейк-профит: ${profitTarget.toFixed(2)} (${rewardPct.toFixed(2)}%)\n` +
               `Дата выхода: ${exitDateStr} (${exitInfo.reason})\n\n`;
-
-    activeSignals.push({
-      index: idx,
-      type,
-      entryDate: candlesData[idx].date.toISOString().slice(0,10),
-      entryPrice: entryPrice.toFixed(2),
-      stopLoss: stopLoss.toFixed(2),
-      takeProfit: profitTarget.toFixed(2),
-      exitDate: exitDateStr,
-      exitReason: exitInfo.reason
-    });
   }
-  return {text: output, active: activeSignals};
+  return output;
 }
 
 async function runAnalysis() {
   document.getElementById('status').textContent = 'Загрузка данных...';
   document.getElementById('results').textContent = '';
-  document.getElementById('activeTradesContent').textContent = 'Сигналы отсутствуют.';
+  await fetchData();
+
+  if (candlesData.length === 0) {
+    document.getElementById('status').textContent = 'Данные не загружены.';
+    return;
+  }
 
   const commissionPct = parseFloat(document.getElementById('commission').value) || 0;
   const minProfitPct = parseFloat(document.getElementById('minProfit').value) || 0;
 
-  let overallText = '';
-  let overallActive = [];
+  const emaShort = calculateEMA(candlesData, 5);
+  const emaLong = calculateEMA(candlesData, 15);
+  const {macdLine, signalLine} = calculateMACD(candlesData);
 
-  for (const ticker of tickers) {
-    const candlesData = await fetchData(ticker);
-    if (candlesData.length === 0) {
-      overallText += `Данные для ${ticker} не загружены.\n\n`;
-      continue;
-    }
+  const signals = findSignals(emaShort, emaLong, macdLine, signalLine);
 
-    const emaShort = calculateEMA(candlesData, 5);
-    const emaLong = calculateEMA(candlesData, 15);
-    const {macdLine, signalLine} = calculateMACD(candlesData);
-    const signals = findSignals(emaShort, emaLong, macdLine, signalLine);
-    const analysis = analyzeSignals(candlesData, signals, commissionPct, minProfitPct);
+  const analysisText = analyzeSignals(signals, commissionPct, minProfitPct);
 
-    overallText += `=== Анализ для ${ticker} ===\n` + analysis.text + '\n';
-    if(analysis.active.length) {
-      overallActive.push({ticker, signals: analysis.active});
-    }
-  }
-
-  document.getElementById('results').textContent = overallText || 'Нет данных для анализа.';
+  document.getElementById('results').textContent = analysisText;
   document.getElementById('status').textContent = 'Анализ завершён.';
-
-  // Формируем текст для блока актуальных сделок
-  if(overallActive.length === 0) {
-    document.getElementById('activeTradesContent').textContent = 'Сигналы отсутствуют.';
-  } else {
-    let activeText = '';
-    overallActive.forEach(item => {
-      activeText += `Тикер: ${item.ticker}\n`;
-      item.signals.forEach(s => {
-        activeText += `  [${s.type.toUpperCase()}] Вход: ${s.entryDate}, Цена: ${s.entryPrice}, SL: ${s.stopLoss}, TP: ${s.takeProfit}, Выход: ${s.exitDate} (${s.exitReason})\n`;
-      });
-      activeText += '\n';
-    });
-    document.getElementById('activeTradesContent').textContent = activeText;
-  }
 }
 </script>
 
