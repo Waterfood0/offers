@@ -71,7 +71,7 @@ async function fetchData() {
       const lowIdx = cols.indexOf('low');
       const closeIdx = cols.indexOf('close');
       const volumeIdx = cols.indexOf('volume');
-
+      const ticker = document.getElementById('tickerSelect').value;
       const yearData = data.map(row => ({
         date: new Date(row[dateIdx]),
         open: row[openIdx],
