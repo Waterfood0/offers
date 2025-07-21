@@ -96,7 +96,8 @@ function calculateEMA(data, period) {
 }
 
 // MACD расчет
-function calculateMACD(data, fastPeriod = 12, slowPeriod = 26, signalPeriod = 9) {
+// Измененные периоды EMA и MACD
+function calculateMACD(data, fastPeriod = 6, slowPeriod = 13, signalPeriod = 9) {
   const emaFast = calculateEMA(data, fastPeriod);
   const emaSlow = calculateEMA(data, slowPeriod);
   const macdLine = [];
@@ -115,24 +116,25 @@ function calculateMACD(data, fastPeriod = 12, slowPeriod = 26, signalPeriod = 9)
   return {macdLine, signalLine, histogram};
 }
 
-// Поиск сигналов пересечения EMA (5 и 15) и MACD (пересечение macdLine и signalLine)
+// Более мягкий поиск сигналов: если пересекается EMA или MACD, сигнал
 function findSignals(emaShort, emaLong, macdLine, signalLine) {
   const signals = [];
   for(let i = 1; i < emaShort.length; i++) {
     if(emaShort[i-1] === undefined || emaLong[i-1] === undefined) continue;
     if(macdLine[i-1] === undefined || signalLine[i-1] === undefined) continue;
 
-    // Покупка: EMA5 пересекает EMA15 вверх И MACD пересекает сигнальную линию вверх
     const emaCrossUp = (emaShort[i-1] < emaLong[i-1]) && (emaShort[i] > emaLong[i]);
-    const macdCrossUp = (macdLine[i-1] < signalLine[i-1]) && (macdLine[i] > signalLine[i]);
-
-    // Продажа: EMA5 пересекает EMA15 вниз И MACD пересекает сигнальную линию вниз
     const emaCrossDown = (emaShort[i-1] > emaLong[i-1]) && (emaShort[i] < emaLong[i]);
+
+    const macdCrossUp = (macdLine[i-1] < signalLine[i-1]) && (macdLine[i] > signalLine[i]);
     const macdCrossDown = (macdLine[i-1] > signalLine[i-1]) && (macdLine[i] < signalLine[i]);
 
-    if(emaCrossUp && macdCrossUp) {
+    // Сигнал покупки, если пересекли EMA вверх ИЛИ MACD вверх
+    if(emaCrossUp || macdCrossUp) {
       signals.push({index: i, type: 'buy'});
-    } else if(emaCrossDown && macdCrossDown) {
+    }
+    // Сигнал продажи, если пересекли EMA вниз ИЛИ MACD вниз
+    else if(emaCrossDown || macdCrossDown) {
       signals.push({index: i, type: 'sell'});
     }
   }
