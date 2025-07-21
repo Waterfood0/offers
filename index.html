@@ -129,7 +129,7 @@
         if (netReward < minProfitPct) continue;
 
         if (isSignalActive(data, idx, entry, target, stop, s.type)) {
-          output += 🟢 ${ticker} — ${s.type.toUpperCase()} @ ${entry.toFixed(2)} (${data[idx].date.toISOString().slice(0,10)})\n;
+          output += `🟢 ${ticker} — ${s.type.toUpperCase()} @ ${entry.toFixed(2)} (${data[idx].date.toISOString().slice(0,10)})\n`;
         }
       }
 
