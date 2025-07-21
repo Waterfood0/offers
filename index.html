@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
 <meta charset="UTF-8" />
-<title>Технический анализ SBER (RSI + SMA)</title>
+<title>Технический анализ SBER (EMA + MACD)</title>
 <style>
   body { font-family: Arial, sans-serif; max-width: 700px; margin: 20px auto; padding: 10px; }
   button { margin-right: 10px; padding: 7px 14px; cursor: pointer; }
@@ -13,7 +13,7 @@
 </head>
 <body>
 
-<h2>Технический анализ SBER (часовой / дневной) с RSI и SMA</h2>
+<h2>Технический анализ SBER (EMA + MACD)</h2>
 
 <div>
   <button onclick="selectInterval('60')">Часовой</button>
@@ -77,91 +77,86 @@ async function fetchData() {
   }
 }
 
-function calculateSMA(data, period) {
-  const sma = [];
+// EMA расчет
+function calculateEMA(data, period) {
+  const k = 2 / (period + 1);
+  const emaArray = [];
+  let emaPrev = data[0].close; // стартуем с первого значения
+
   for(let i = 0; i < data.length; i++) {
-    if(i < period - 1) {
-      sma.push(null);
-      continue;
+    if(i === 0) {
+      emaArray.push(emaPrev);
+    } else {
+      const emaCurrent = data[i].close * k + emaPrev * (1 - k);
+      emaArray.push(emaCurrent);
+      emaPrev = emaCurrent;
     }
-    let sum = 0;
-    for(let j = i - period + 1; j <= i; j++) {
-      sum += data[j].close;
-    }
-    sma.push(sum / period);
   }
-  return sma;
+  return emaArray;
 }
 
-// Расчет RSI по классической формуле (14 периодов)
-function calculateRSI(data, period = 14) {
-  const rsi = [];
-  let gains = 0;
-  let losses = 0;
+// MACD расчет
+function calculateMACD(data, fastPeriod = 12, slowPeriod = 26, signalPeriod = 9) {
+  const emaFast = calculateEMA(data, fastPeriod);
+  const emaSlow = calculateEMA(data, slowPeriod);
+  const macdLine = [];
 
-  for (let i = 1; i < period; i++) {
-    const change = data[i].close - data[i - 1].close;
-    if (change > 0) gains += change;
-    else losses -= change;
+  for(let i = 0; i < data.length; i++) {
+    macdLine.push(emaFast[i] - emaSlow[i]);
   }
 
-  let avgGain = gains / period;
-  let avgLoss = losses / period;
-  rsi[period - 1] = 100 - 100 / (1 + avgGain / avgLoss);
+  const signalLine = calculateEMA(macdLine.map(val => ({close: val})), signalPeriod);
+  const histogram = [];
 
-  for (let i = period; i < data.length; i++) {
-    const change = data[i].close - data[i - 1].close;
-    let gain = change > 0 ? change : 0;
-    let loss = change < 0 ? -change : 0;
-
-    avgGain = (avgGain * (period - 1) + gain) / period;
-    avgLoss = (avgLoss * (period - 1) + loss) / period;
-
-    const rs = avgGain / avgLoss;
-    rsi[i] = 100 - 100 / (1 + rs);
+  for(let i = 0; i < data.length; i++) {
+    histogram.push(macdLine[i] - signalLine[i]);
   }
 
-  for (let i = 0; i < period - 1; i++) {
-    rsi[i] = null;
-  }
-
-  return rsi;
+  return {macdLine, signalLine, histogram};
 }
 
-// Сигналы на покупку/продажу с учетом RSI
-function findSignalsWithRSI(shortSMA, longSMA, rsi) {
+// Поиск сигналов пересечения EMA (5 и 15) и MACD (пересечение macdLine и signalLine)
+function findSignals(emaShort, emaLong, macdLine, signalLine) {
   const signals = [];
-  for (let i = 1; i < shortSMA.length; i++) {
-    if (shortSMA[i - 1] === null || longSMA[i - 1] === null || rsi[i] === null) continue;
+  for(let i = 1; i < emaShort.length; i++) {
+    if(emaShort[i-1] === undefined || emaLong[i-1] === undefined) continue;
+    if(macdLine[i-1] === undefined || signalLine[i-1] === undefined) continue;
 
-    // Покупка: пересечение вверх + RSI < 30 (перепроданность)
-    if (shortSMA[i - 1] < longSMA[i - 1] && shortSMA[i] > longSMA[i] && rsi[i] < 30) {
-      signals.push({ index: i, type: 'buy' });
-    }
-    // Продажа: пересечение вниз + RSI > 70 (перекупленность)
-    else if (shortSMA[i - 1] > longSMA[i - 1] && shortSMA[i] < longSMA[i] && rsi[i] > 70) {
-      signals.push({ index: i, type: 'sell' });
+    // Покупка: EMA5 пересекает EMA15 вверх И MACD пересекает сигнальную линию вверх
+    const emaCrossUp = (emaShort[i-1] < emaLong[i-1]) && (emaShort[i] > emaLong[i]);
+    const macdCrossUp = (macdLine[i-1] < signalLine[i-1]) && (macdLine[i] > signalLine[i]);
+
+    // Продажа: EMA5 пересекает EMA15 вниз И MACD пересекает сигнальную линию вниз
+    const emaCrossDown = (emaShort[i-1] > emaLong[i-1]) && (emaShort[i] < emaLong[i]);
+    const macdCrossDown = (macdLine[i-1] > signalLine[i-1]) && (macdLine[i] < signalLine[i]);
+
+    if(emaCrossUp && macdCrossUp) {
+      signals.push({index: i, type: 'buy'});
+    } else if(emaCrossDown && macdCrossDown) {
+      signals.push({index: i, type: 'sell'});
     }
   }
   return signals;
 }
-
-function findLocalMin(data, startIdx, length) {
-  let min = data[startIdx].low;
-  for(let i = startIdx; i > startIdx - length && i >= 0; i--) {
-    if(data[i].low < min) min = data[i].low;
+  // Поиск локального минимума в окне lookback перед index
+function findLocalMin(data, index, lookback = 10) {
+  let minVal = data[index].low;
+  for(let i = Math.max(0, index - lookback); i < index; i++) {
+    if(data[i].low < minVal) minVal = data[i].low;
   }
-  return min;
+  return minVal;
 }
 
-function findLocalMax(data, startIdx, length) {
-  let max = data[startIdx].high;
-  for(let i = startIdx; i > startIdx - length && i >= 0; i--) {
-    if(data[i].high > max) max = data[i].high;
+// Поиск локального максимума в окне lookback перед index
+function findLocalMax(data, index, lookback = 10) {
+  let maxVal = data[index].high;
+  for(let i = Math.max(0, index - lookback); i < index; i++) {
+    if(data[i].high > maxVal) maxVal = data[i].high;
   }
-  return max;
+  return maxVal;
 }
 
+// Поиск даты выхода по тейк-профиту или стоп-лоссу
 function findExitDate(data, startIdx, targetPrice, stopPrice, type) {
   for(let i = startIdx + 1; i < data.length; i++) {
     if(type === 'buy') {
@@ -175,6 +170,7 @@ function findExitDate(data, startIdx, targetPrice, stopPrice, type) {
   return {date: null, reason: 'Выход не достигнут'};
 }
 
+// Анализ сигналов, с учетом комиссии и минимальной желаемой прибыли
 function analyzeSignals(signals, commissionPct, minProfitPct) {
   const lookback = 10;
   let output = '';
@@ -198,51 +194,49 @@ function analyzeSignals(signals, commissionPct, minProfitPct) {
       rewardPct = ((profitTarget - entryPrice) / entryPrice) * 100;
     } else {
       stopLoss = findLocalMax(candlesData, idx, lookback);
-      if(stopLoss <= entryPrice) stopLoss = entryPrice * 1.015;
+      if(stopLoss <= entryPrice) stopLoss = entryPrice * 1.015; // минимальный стоп для продажи
       riskPct = ((stopLoss - entryPrice) / entryPrice) * 100;
       profitTarget = entryPrice - riskPct * 2 * entryPrice / 100;
       rewardPct = ((entryPrice - profitTarget) / entryPrice) * 100;
     }
 
-    const totalCosts = commissionPct * 2;
+    const totalCosts = commissionPct * 2; // комиссия за вход и выход
     if (rewardPct - totalCosts < minProfitPct) {
       output += `Сигнал #${idx} (${type.toUpperCase()}): Прибыль ниже минимальной с учётом комиссии. Пропускаем.\n\n`;
       continue;
     }
 
     const exitInfo = findExitDate(candlesData, idx, profitTarget, stopLoss, type);
-    const exitDateStr = exitInfo.date ? exitInfo.date.toLocaleString() : '—';
-    output += `Сигнал #${idx} (${type.toUpperCase()}):\n`;
-    output += `  Вход по цене: ${entryPrice.toFixed(2)} ₽\n`;
-    output += `  Стоп-лосс: ${stopLoss.toFixed(2)} ₽ (${riskPct.toFixed(2)}%)\n`;
-    output += `  Тейк-профит: ${profitTarget.toFixed(2)} ₽ (${rewardPct.toFixed(2)}%)\n`;
-    output += `  Комиссия итого: ${totalCosts.toFixed(2)}%\n`;
-    output += `  Выход: ${exitInfo.reason}, дата: ${exitDateStr}\n\n`;
-  }
+    const exitDateStr = exitInfo.date ? exitInfo.date.toISOString().slice(0,10) : 'не достигнута';
 
+    output += `Сигнал #${idx} (${type.toUpperCase()}):\n` +
+              `Дата входа: ${candlesData[idx].date.toISOString().slice(0,10)}\n` +
+              `Цена входа: ${entryPrice.toFixed(2)}\n` +
+              `Стоп-лосс: ${stopLoss.toFixed(2)} (${riskPct.toFixed(2)}%)\n` +
+              `Тейк-профит: ${profitTarget.toFixed(2)} (${rewardPct.toFixed(2)}%)\n` +
+              `Дата выхода: ${exitDateStr} (${exitInfo.reason})\n\n`;
+  }
   return output;
 }
 
 async function runAnalysis() {
-  document.getElementById('status').textContent = 'Загружаем данные... Пожалуйста, подождите.';
+  document.getElementById('status').textContent = 'Загрузка данных...';
   document.getElementById('results').textContent = '';
-
   await fetchData();
-  if(candlesData.length === 0) {
-    document.getElementById('status').textContent = 'Данные не загружены. Проверьте соединение или параметры.';
+
+  if (candlesData.length === 0) {
+    document.getElementById('status').textContent = 'Данные не загружены.';
     return;
   }
-
-  document.getElementById('status').textContent = 'Вычисляем индикаторы...';
-
-  const shortSMA = calculateSMA(candlesData, 7);
-  const longSMA = calculateSMA(candlesData, 25);
-  const rsi = calculateRSI(candlesData, 14);
 
   const commissionPct = parseFloat(document.getElementById('commission').value) || 0;
   const minProfitPct = parseFloat(document.getElementById('minProfit').value) || 0;
 
-  const signals = findSignalsWithRSI(shortSMA, longSMA, rsi);
+  const emaShort = calculateEMA(candlesData, 5);
+  const emaLong = calculateEMA(candlesData, 15);
+  const {macdLine, signalLine} = calculateMACD(candlesData);
+
+  const signals = findSignals(emaShort, emaLong, macdLine, signalLine);
 
   const analysisText = analyzeSignals(signals, commissionPct, minProfitPct);
 
