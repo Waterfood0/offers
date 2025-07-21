@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
 <meta charset="UTF-8" />
-<title>Технический анализ SBER с RSI</title>
+<title>Технический анализ SBER (RSI + SMA)</title>
 <style>
   body { font-family: Arial, sans-serif; max-width: 700px; margin: 20px auto; padding: 10px; }
   button { margin-right: 10px; padding: 7px 14px; cursor: pointer; }
@@ -13,7 +13,7 @@
 </head>
 <body>
 
-<h2>Технический анализ SBER (часовой / дневной) с RSI</h2>
+<h2>Технический анализ SBER (часовой / дневной) с RSI и SMA</h2>
 
 <div>
   <button onclick="selectInterval('60')">Часовой</button>
@@ -172,7 +172,6 @@ function findExitDate(data, startIdx, targetPrice, stopPrice, type) {
       if(data[i].low <= targetPrice) return {date: data[i].date, reason: 'Тейк-профит достигнут'};
     }
   }
-  // Если не было выхода - позиция открыта до конца данных
   return {date: null, reason: 'Выход не достигнут'};
 }
 
@@ -193,7 +192,7 @@ function analyzeSignals(signals, commissionPct, minProfitPct) {
 
     if(type === 'buy') {
       stopLoss = findLocalMin(candlesData, idx, lookback);
-      if(stopLoss >= entryPrice) stopLoss = entryPrice * 0.985;
+      if(stopLoss >= entryPrice) stopLoss = entryPrice * 0.985; // минимальный стоп
       riskPct = ((entryPrice - stopLoss) / entryPrice) * 100;
       profitTarget = entryPrice + riskPct * 2 * entryPrice / 100;
       rewardPct = ((profitTarget - entryPrice) / entryPrice) * 100;
@@ -206,3 +205,51 @@ function analyzeSignals(signals, commissionPct, minProfitPct) {
     }
 
     const totalCosts = commissionPct * 2;
+    if (rewardPct - totalCosts < minProfitPct) {
+      output += `Сигнал #${idx} (${type.toUpperCase()}): Прибыль ниже минимальной с учётом комиссии. Пропускаем.\n\n`;
+      continue;
+    }
+
+    const exitInfo = findExitDate(candlesData, idx, profitTarget, stopLoss, type);
+    const exitDateStr = exitInfo.date ? exitInfo.date.toLocaleString() : '—';
+    output += `Сигнал #${idx} (${type.toUpperCase()}):\n`;
+    output += `  Вход по цене: ${entryPrice.toFixed(2)} ₽\n`;
+    output += `  Стоп-лосс: ${stopLoss.toFixed(2)} ₽ (${riskPct.toFixed(2)}%)\n`;
+    output += `  Тейк-профит: ${profitTarget.toFixed(2)} ₽ (${rewardPct.toFixed(2)}%)\n`;
+    output += `  Комиссия итого: ${totalCosts.toFixed(2)}%\n`;
+    output += `  Выход: ${exitInfo.reason}, дата: ${exitDateStr}\n\n`;
+  }
+
+  return output;
+}
+
+async function runAnalysis() {
+  document.getElementById('status').textContent = 'Загружаем данные... Пожалуйста, подождите.';
+  document.getElementById('results').textContent = '';
+
+  await fetchData();
+  if(candlesData.length === 0) {
+    document.getElementById('status').textContent = 'Данные не загружены. Проверьте соединение или параметры.';
+    return;
+  }
+
+  document.getElementById('status').textContent = 'Вычисляем индикаторы...';
+
+  const shortSMA = calculateSMA(candlesData, 7);
+  const longSMA = calculateSMA(candlesData, 25);
+  const rsi = calculateRSI(candlesData, 14);
+
+  const commissionPct = parseFloat(document.getElementById('commission').value) || 0;
+  const minProfitPct = parseFloat(document.getElementById('minProfit').value) || 0;
+
+  const signals = findSignalsWithRSI(shortSMA, longSMA, rsi);
+
+  const analysisText = analyzeSignals(signals, commissionPct, minProfitPct);
+
+  document.getElementById('results').textContent = analysisText;
+  document.getElementById('status').textContent = 'Анализ завершён.';
+}
+</script>
+
+</body>
+</html>
