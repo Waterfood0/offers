@@ -99,42 +99,57 @@
     }
 
     function analyzeSignals(ticker, data) {
-      const emaShort = calculateEMA(data, 5);
-      const emaLong = calculateEMA(data, 15);
-      const {macd, signalLine} = calculateMACD(data);
-      const signals = findSignals(data, emaShort, emaLong, macd, signalLine);
-      const lookback = 10;
+  const emaShort = calculateEMA(data, 5);
+  const emaLong = calculateEMA(data, 15);
+  const { macd, signalLine } = calculateMACD(data);
+  const signals = findSignals(data, emaShort, emaLong, macd, signalLine);
+  const lookback = 10;
 
-      let output = '';
-      for (const s of signals) {
-        const idx = s.index;
-        const entry = data[idx].close;
-        let stop, riskPct, target, rewardPct;
+  const capital = 100000;             // капитал пользователя
+  const riskPerTradePct = 1;          // риск на одну сделку (%)
+  const maxRisk = capital * (riskPerTradePct / 100);
 
-        if (s.type === 'buy') {
-          stop = findLocalExtreme(data, idx, lookback, 'low');
-          if (stop >= entry) stop = entry * 0.985;
-          riskPct = (entry - stop) / entry * 100;
-          target = entry + riskPct * 2 * entry / 100;
-          rewardPct = (target - entry) / entry * 100;
-        } else {
-          stop = findLocalExtreme(data, idx, lookback, 'high');
-          if (stop <= entry) stop = entry * 1.015;
-          riskPct = (stop - entry) / entry * 100;
-          target = entry - riskPct * 2 * entry / 100;
-          rewardPct = (entry - target) / entry * 100;
-        }
+  let output = '';
 
-        const netReward = rewardPct - commissionPct * 2;
-        if (netReward < minProfitPct) continue;
+  for (const s of signals) {
+    const idx = s.index;
+    const entry = data[idx].close;
+    let stop, riskPct, target, rewardPct;
 
-        if (isSignalActive(data, idx, entry, target, stop, s.type)) {
-          output += `${ticker} — ${s.type.toUpperCase()} @ ${entry.toFixed(2)} (${data[idx].date.toISOString().slice(0,10)})\n`;
-        }
-      }
-
-      return output;
+    if (s.type === 'buy') {
+      stop = findLocalExtreme(data, idx, lookback, 'low');
+      if (stop >= entry) stop = entry * 0.985;
+      riskPct = ((entry - stop) / entry) * 100;
+      target = entry + riskPct * 2 * entry / 100;
+      rewardPct = ((target - entry) / entry) * 100;
+    } else {
+      stop = findLocalExtreme(data, idx, lookback, 'high');
+      if (stop <= entry) stop = entry * 1.015;
+      riskPct = ((stop - entry) / entry) * 100;
+      target = entry - riskPct * 2 * entry / 100;
+      rewardPct = ((entry - target) / entry) * 100;
     }
+
+    const netReward = rewardPct - commissionPct * 2;
+    if (netReward < minProfitPct) continue;
+
+    if (isSignalActive(data, idx, entry, target, stop, s.type)) {
+      const riskPerShare = Math.abs(entry - stop);
+      const qty = Math.floor(maxRisk / riskPerShare); // сколько можно купить
+      const totalCost = qty * entry;
+
+      output += `🟢 ${ticker} — ${s.type.toUpperCase()} @ ${entry.toFixed(2)} (${data[idx].date.toISOString().slice(0, 10)})\n`;
+      output += `• Стоп-лосс: ${stop.toFixed(2)} (${riskPct.toFixed(2)}%)\n`;
+      output += `• Тейк-профит: ${target.toFixed(2)} (${rewardPct.toFixed(2)}%)\n`;
+      output += `• Риск на 1 бумагу: ${riskPerShare.toFixed(2)} руб\n`;
+      output += `• Макс. риск: ${maxRisk.toFixed(2)} руб (${riskPerTradePct}% от капитала)\n`;
+      output += `• Кол-во бумаг: ${qty} шт (на сумму ~${totalCost.toFixed(2)} руб)\n`;
+      output += `• ${s.type === 'buy' ? 'Покупать' : 'Продавать'} на следующий день\n\n`;
+    }
+  }
+
+  return output;
+}
 
     async function runFullScan() {
       const resultsDiv = document.getElementById('results');
