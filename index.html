@@ -1,32 +1,57 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-  <meta charset="UTF-8" />
-  <title>Актуальные сигналы (EMA + MACD)</title>
+  <meta charset="UTF-8">
+  <title>Актуальные сигналы EMA + MACD</title>
   <style>
-    body { font-family: Arial, sans-serif; max-width: 900px; margin: 20px auto; padding: 10px; }
-    button { margin: 5px 5px 10px 0; padding: 6px 12px; cursor: pointer; }
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 900px;
+      margin: 20px auto;
+      padding: 20px;
+      background: #f4f4f4;
+    }
+    button {
+      margin: 5px;
+      padding: 8px 16px;
+      border: none;
+      border-radius: 6px;
+      background-color: #333;
+      color: white;
+      cursor: pointer;
+    }
+    button:hover {
+      background-color: #555;
+    }
     #allSignals, #results {
-      white-space: pre-wrap;
-      background: #f9f9f9;
+      background: white;
       padding: 15px;
       border-radius: 6px;
       margin-top: 10px;
+      white-space: pre-wrap;
+      font-family: monospace;
     }
-    h2 { margin-bottom: 5px; }
-    .section { margin-top: 20px; }
+    .buy {
+      color: green;
+      font-weight: bold;
+    }
+    .sell {
+      color: red;
+      font-weight: bold;
+    }
+    h2, h3 {
+      margin-bottom: 5px;
+    }
   </style>
 </head>
 <body>
 
-<h2>📊 Актуальные сигналы этого месяца (все акции)</h2>
+<h2>📊 Актуальные сигналы за текущий месяц</h2>
 <div id="allSignals">Загрузка...</div>
 
-<div class="section">
-  <h3>Выберите тикер для просмотра:</h3>
-  <div id="tickerButtons"></div>
-  <div id="results"></div>
-</div>
+<h3>🔍 Посмотреть по тикеру:</h3>
+<div id="tickerButtons"></div>
+<div id="results"></div>
 
 <script>
 const tickers = ['SBER', 'GAZP', 'LKOH', 'MGNT', 'YNDX'];
@@ -155,15 +180,16 @@ function analyze(data, signals) {
 }
 
 function renderSignalBlock(ticker, signals) {
-  if (signals.length === 0) return `${ticker}: Нет актуальных сигналов\n`;
-  return signals.map(s =>
-    `${ticker} | ${s.type.toUpperCase()} | ${s.date}\nЦена: ${s.entry}, Стоп: ${s.stop}, Цель: ${s.tp}\n`
-  ).join('\n');
+  if (signals.length === 0) return `${ticker}: Нет активных сигналов\n`;
+  return signals.map(s => {
+    const cls = s.type === 'buy' ? 'buy' : 'sell';
+    return `${ticker} | <span class="${cls}">${s.type.toUpperCase()}</span> | ${s.date}\nЦена: ${s.entry}, Стоп: ${s.stop}, Цель: ${s.tp}\n`;
+  }).join('\n');
 }
 
 async function updateAll() {
   const allDiv = document.getElementById('allSignals');
-  allDiv.textContent = 'Обновление...';
+  allDiv.innerHTML = 'Обновление...';
   allActiveSignals = {};
   const allOutput = [];
 
@@ -183,7 +209,7 @@ async function updateAll() {
   }
 
   const time = new Date().toLocaleTimeString();
-  allDiv.textContent = allOutput.join('\n') + `\nОбновлено: ${time}`;
+  allDiv.innerHTML = allOutput.join('\n') + `\n\nОбновлено: ${time}`;
 }
 
 function setupTickerButtons() {
@@ -194,7 +220,7 @@ function setupTickerButtons() {
     btn.textContent = ticker;
     btn.onclick = () => {
       const out = renderSignalBlock(ticker, allActiveSignals[ticker] || []);
-      document.getElementById('results').textContent = out || 'Нет сигналов';
+      document.getElementById('results').innerHTML = out || 'Нет сигналов';
     };
     buttonWrap.appendChild(btn);
   }
@@ -202,7 +228,7 @@ function setupTickerButtons() {
 
 function startAutoRefresh() {
   if (updateTimer) clearInterval(updateTimer);
-  updateTimer = setInterval(updateAll, 60 * 1000); // каждые 60 сек
+  updateTimer = setInterval(updateAll, 60000); // 60 сек
 }
 
 async function init() {
