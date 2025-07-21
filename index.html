@@ -1,244 +1,153 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-  <meta charset="UTF-8">
-  <title>Актуальные сигналы EMA + MACD</title>
+  <meta charset="UTF-8" />
+  <title>Технический анализ (EMA + MACD)</title>
   <style>
-    body {
-      font-family: Arial, sans-serif;
-      max-width: 900px;
-      margin: 20px auto;
-      padding: 20px;
-      background: #f4f4f4;
-    }
-    button {
-      margin: 5px;
-      padding: 8px 16px;
-      border: none;
-      border-radius: 6px;
-      background-color: #333;
-      color: white;
-      cursor: pointer;
-    }
-    button:hover {
-      background-color: #555;
-    }
-    #allSignals, #results {
-      background: white;
-      padding: 15px;
-      border-radius: 6px;
-      margin-top: 10px;
-      white-space: pre-wrap;
-      font-family: monospace;
-    }
-    .buy {
-      color: green;
-      font-weight: bold;
-    }
-    .sell {
-      color: red;
-      font-weight: bold;
-    }
-    h2, h3 {
-      margin-bottom: 5px;
-    }
+    body { font-family: Arial, sans-serif; max-width: 900px; margin: 20px auto; padding: 10px; }
+    button { margin: 5px; padding: 8px 14px; cursor: pointer; }
+    #results, #allSignals { white-space: pre-wrap; background: #f9f9f9; padding: 15px; border-radius: 6px; min-height: 200px; margin-top: 20px; }
+    h2 { margin-top: 30px; }
   </style>
 </head>
 <body>
 
-<h2>📊 Актуальные сигналы за текущий месяц</h2>
+<h1>Актуальные сигналы (EMA + MACD)</h1>
+
+<div>
+  <strong>Выберите тикер:</strong><br>
+  <button onclick="filterByTicker('ALL')">Все</button>
+  <button onclick="filterByTicker('SBER')">SBER</button>
+  <button onclick="filterByTicker('GAZP')">GAZP</button>
+  <button onclick="filterByTicker('LKOH')">LKOH</button>
+  <button onclick="filterByTicker('MGNT')">MGNT</button>
+  <button onclick="filterByTicker('YNDX')">YNDX</button>
+</div>
+
+<div id="status">Загрузка данных...</div>
+
+<h2>Все актуальные сигналы за текущий месяц</h2>
 <div id="allSignals">Загрузка...</div>
 
-<h3>🔍 Посмотреть по тикеру:</h3>
-<div id="tickerButtons"></div>
-<div id="results"></div>
+<h2>Фильтр по тикеру</h2>
+<div id="results">Выберите тикер...</div>
 
 <script>
 const tickers = ['SBER', 'GAZP', 'LKOH', 'MGNT', 'YNDX'];
-let interval = '60';
-let allData = {};
-let allActiveSignals = {};
-let updateTimer = null;
-
-async function fetchDataForTicker(ticker) {
-  const now = new Date();
-  const currentYear = now.getFullYear();
-  const url = `https://iss.moex.com/iss/engines/stock/markets/shares/boards/TQBR/securities/${ticker}/candles.json?interval=${interval}&from=${currentYear}-01-01&till=${currentYear}-12-31&sort_order=asc&limit=1000`;
-  try {
-    const res = await fetch(url);
-    const json = await res.json();
-    if (!json.candles?.data) return [];
-    const cols = json.candles.columns;
-    const data = json.candles.data;
-    const idx = (name) => cols.indexOf(name);
-
-    return data.map(row => ({
-      date: new Date(row[idx('begin')]),
-      open: row[idx('open')],
-      high: row[idx('high')],
-      low: row[idx('low')],
-      close: row[idx('close')],
-      volume: row[idx('volume')]
-    }));
-  } catch (e) {
-    console.error(`Ошибка загрузки ${ticker}`, e);
-    return [];
-  }
-}
+const interval = '60'; // часовой
+let allSignals = [];
 
 function calculateEMA(data, period) {
   const k = 2 / (period + 1);
-  const emaArray = [];
-  let emaPrev = data[0].close;
-  for (let i = 0; i < data.length; i++) {
-    emaPrev = i === 0 ? emaPrev : data[i].close * k + emaPrev * (1 - k);
-    emaArray.push(emaPrev);
-  }
-  return emaArray;
+  let ema = data[0].close;
+  return data.map((d, i) => {
+    if (i === 0) return ema;
+    ema = d.close * k + ema * (1 - k);
+    return ema;
+  });
 }
 
 function calculateMACD(data, fast = 6, slow = 13, signal = 9) {
-  const emaFast = calculateEMA(data, fast);
-  const emaSlow = calculateEMA(data, slow);
-  const macdLine = emaFast.map((v, i) => v - emaSlow[i]);
-  const signalLine = calculateEMA(macdLine.map(v => ({ close: v })), signal);
-  return { macdLine, signalLine };
+  const fastEMA = calculateEMA(data, fast);
+  const slowEMA = calculateEMA(data, slow);
+  const macd = fastEMA.map((v, i) => v - slowEMA[i]);
+  const signalLine = calculateEMA(macd.map(v => ({close: v})), signal);
+  const histogram = macd.map((v, i) => v - signalLine[i]);
+  return { macd, signalLine, histogram };
 }
 
 function findSignals(data, emaShort, emaLong, macdLine, signalLine) {
   const signals = [];
-  for (let i = 1; i < emaShort.length; i++) {
-    const emaUp = emaShort[i - 1] < emaLong[i - 1] && emaShort[i] > emaLong[i];
-    const emaDown = emaShort[i - 1] > emaLong[i - 1] && emaShort[i] < emaLong[i];
-    const macdUp = macdLine[i - 1] < signalLine[i - 1] && macdLine[i] > signalLine[i];
-    const macdDown = macdLine[i - 1] > signalLine[i - 1] && macdLine[i] < signalLine[i];
-    if (emaUp || macdUp) signals.push({ index: i, type: 'buy' });
-    else if (emaDown || macdDown) signals.push({ index: i, type: 'sell' });
+  for (let i = 1; i < data.length; i++) {
+    const crossUp = emaShort[i-1] < emaLong[i-1] && emaShort[i] > emaLong[i];
+    const crossDown = emaShort[i-1] > emaLong[i-1] && emaShort[i] < emaLong[i];
+    const macdUp = macdLine[i-1] < signalLine[i-1] && macdLine[i] > signalLine[i];
+    const macdDown = macdLine[i-1] > signalLine[i-1] && macdLine[i] < signalLine[i];
+
+    if (crossUp || macdUp) signals.push({ type: 'BUY', index: i });
+    else if (crossDown || macdDown) signals.push({ type: 'SELL', index: i });
   }
   return signals;
 }
 
-function findLocalMin(data, i, lookback = 10) {
-  return Math.min(...data.slice(Math.max(0, i - lookback), i).map(d => d.low));
-}
-
-function findLocalMax(data, i, lookback = 10) {
-  return Math.max(...data.slice(Math.max(0, i - lookback), i).map(d => d.high));
-}
-
-function findExit(data, startIdx, tp, sl, type) {
-  for (let i = startIdx + 1; i < data.length; i++) {
-    if (type === 'buy') {
-      if (data[i].low <= sl) return { date: data[i].date, reason: 'Стоп-лосс' };
-      if (data[i].high >= tp) return { date: data[i].date, reason: 'Тейк-профит' };
-    } else {
-      if (data[i].high >= sl) return { date: data[i].date, reason: 'Стоп-лосс' };
-      if (data[i].low <= tp) return { date: data[i].date, reason: 'Тейк-профит' };
-    }
-  }
-  return { date: null };
-}
-
-function isCurrentMonth(date) {
+function filterThisMonth(date) {
   const now = new Date();
   return date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth();
 }
 
-function analyze(data, signals) {
-  const results = [];
-  for (const s of signals) {
-    const i = s.index;
-    const entry = data[i].close;
-    const date = data[i].date;
-    if (!isCurrentMonth(date)) continue;
-
-    let stop, tp;
-    if (s.type === 'buy') {
-      stop = findLocalMin(data, i);
-      stop = stop >= entry ? entry * 0.985 : stop;
-      const risk = entry - stop;
-      tp = entry + risk * 2;
-    } else {
-      stop = findLocalMax(data, i);
-      stop = stop <= entry ? entry * 1.015 : stop;
-      const risk = stop - entry;
-      tp = entry - risk * 2;
-    }
-
-    const exit = findExit(data, i, tp, stop, s.type);
-    if (!exit.date) {
-      results.push({
-        date: date.toISOString().slice(0, 10),
-        entry: entry.toFixed(2),
-        stop: stop.toFixed(2),
-        tp: tp.toFixed(2),
-        type: s.type
-      });
-    }
+async function fetchCandles(ticker) {
+  const to = new Date().toISOString().slice(0, 10);
+  const from = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10);
+  const url = `https://iss.moex.com/iss/engines/stock/markets/shares/boards/TQBR/securities/${ticker}/candles.json?interval=${interval}&from=${from}&till=${to}&limit=1000`;
+  try {
+    const res = await fetch(url);
+    const json = await res.json();
+    const cols = json.candles.columns;
+    const data = json.candles.data || [];
+    const [dateIdx, openIdx, highIdx, lowIdx, closeIdx] = ['begin','open','high','low','close'].map(k => cols.indexOf(k));
+    return data.map(row => ({
+      date: new Date(row[dateIdx]),
+      open: row[openIdx],
+      high: row[highIdx],
+      low: row[lowIdx],
+      close: row[closeIdx],
+    }));
+  } catch (e) {
+    console.error(`Ошибка загрузки ${ticker}:`, e);
+    return [];
   }
-  return results;
 }
 
-function renderSignalBlock(ticker, signals) {
-  if (signals.length === 0) return `${ticker}: Нет активных сигналов\n`;
+async function analyzeTicker(ticker) {
+  const candles = await fetchCandles(ticker);
+  if (candles.length < 20) return [];
+
+  const ema5 = calculateEMA(candles, 5);
+  const ema15 = calculateEMA(candles, 15);
+  const { macd, signalLine } = calculateMACD(candles);
+  const signals = findSignals(candles, ema5, ema15, macd, signalLine);
+
   return signals.map(s => {
-    const cls = s.type === 'buy' ? 'buy' : 'sell';
-    return `${ticker} | <span class="${cls}">${s.type.toUpperCase()}</span> | ${s.date}\nЦена: ${s.entry}, Стоп: ${s.stop}, Цель: ${s.tp}\n`;
-  }).join('\n');
-}
-
-async function updateAll() {
-  const allDiv = document.getElementById('allSignals');
-  allDiv.innerHTML = 'Обновление...';
-  allActiveSignals = {};
-  const allOutput = [];
-
-  for (const ticker of tickers) {
-    const data = await fetchDataForTicker(ticker);
-    allData[ticker] = data;
-
-    const emaShort = calculateEMA(data, 5);
-    const emaLong = calculateEMA(data, 15);
-    const { macdLine, signalLine } = calculateMACD(data);
-
-    const signals = findSignals(data, emaShort, emaLong, macdLine, signalLine);
-    const active = analyze(data, signals);
-    allActiveSignals[ticker] = active;
-
-    allOutput.push(renderSignalBlock(ticker, active));
-  }
-
-  const time = new Date().toLocaleTimeString();
-  allDiv.innerHTML = allOutput.join('\n') + `\n\nОбновлено: ${time}`;
-}
-
-function setupTickerButtons() {
-  const buttonWrap = document.getElementById('tickerButtons');
-  buttonWrap.innerHTML = '';
-  for (const ticker of tickers) {
-    const btn = document.createElement('button');
-    btn.textContent = ticker;
-    btn.onclick = () => {
-      const out = renderSignalBlock(ticker, allActiveSignals[ticker] || []);
-      document.getElementById('results').innerHTML = out || 'Нет сигналов';
+    const c = candles[s.index];
+    return {
+      ticker,
+      type: s.type,
+      date: c.date,
+      price: c.close,
     };
-    buttonWrap.appendChild(btn);
+  }).filter(s => filterThisMonth(s.date));
+}
+
+async function runAnalysis() {
+  document.getElementById('status').textContent = 'Загружаем данные...';
+  allSignals = [];
+
+  for (const ticker of tickers) {
+    const result = await analyzeTicker(ticker);
+    allSignals = allSignals.concat(result);
   }
+
+  updateAllSignals();
+  document.getElementById('status').textContent = `Обновлено: ${new Date().toLocaleTimeString()}`;
 }
 
-function startAutoRefresh() {
-  if (updateTimer) clearInterval(updateTimer);
-  updateTimer = setInterval(updateAll, 60000); // 60 сек
+function updateAllSignals() {
+  const allText = allSignals.map(s =>
+    `${s.ticker} | ${s.type} | ${s.date.toISOString().slice(0, 10)} | Цена: ${s.price.toFixed(2)}`
+  ).join('\n');
+  document.getElementById('allSignals').textContent = allText || 'Нет сигналов за текущий месяц.';
 }
 
-async function init() {
-  setupTickerButtons();
-  await updateAll();
-  startAutoRefresh();
+function filterByTicker(ticker) {
+  const filtered = ticker === 'ALL' ? allSignals : allSignals.filter(s => s.ticker === ticker);
+  const resultText = filtered.map(s =>
+    `${s.ticker} | ${s.type} | ${s.date.toISOString().slice(0, 10)} | Цена: ${s.price.toFixed(2)}`
+  ).join('\n');
+  document.getElementById('results').textContent = resultText || 'Нет сигналов.';
 }
 
-init();
+runAnalysis();
+setInterval(runAnalysis, 60_000); // автообновление каждую минуту
 </script>
-
 </body>
 </html>
