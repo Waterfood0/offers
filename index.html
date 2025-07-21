@@ -221,14 +221,7 @@ function analyzeSignals(signals, commissionPct, minProfitPct) {
     const exitInfo = findExitDate(candlesData, idx, profitTarget, stopLoss, type);
     const exitDateStr = exitInfo.date ? exitInfo.date.toISOString().slice(0,10) : 'не достигнута';
 
-    output += `Сигнал #${idx} (${type.toUpperCase()}):\n` +
-              `Дата входа: ${candlesData[idx].date.toISOString().slice(0,10)}\n` +
-              `Цена входа: ${entryPrice.toFixed(2)}\n` +
-              `Стоп-лосс: ${stopLoss.toFixed(2)} (${riskPct.toFixed(2)}%)\n` +
-              `Тейк-профит: ${profitTarget.toFixed(2)} (${rewardPct.toFixed(2)}%)\n` +
-              `Дата выхода: ${exitDateStr} (${exitInfo.reason})\n\n`;
-  }
-  if (!exitInfo.date) {  // сигнал ещё активен
+    if (!exitInfo.date) {  // сигнал ещё активен
   output += `Актуальный сигнал #${idx} (${type.toUpperCase()}):\n` +
             `Дата входа: ${candlesData[idx].date.toISOString().slice(0,10)}\n` +
             `Цена входа: ${entryPrice.toFixed(2)}\n` +
