@@ -22,7 +22,7 @@
       const now = new Date();
       const from = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
       const till = new Date().toISOString().slice(0, 10);
-      const url = https://iss.moex.com/iss/engines/stock/markets/shares/boards/TQBR/securities/${ticker}/candles.json?interval=${interval}&from=${from}&till=${till}&sort_order=asc&limit=1000;
+      const url = `https://iss.moex.com/iss/engines/stock/markets/shares/boards/TQBR/securities/${ticker}/candles.json?interval=${interval}&from=${from}&till=${till}&sort_order=asc&limit=1000`;
 
       try {
         const res = await fetch(url);
