@@ -138,13 +138,13 @@
       const qty = Math.floor(maxRisk / riskPerShare); // сколько можно купить
       const totalCost = qty * entry;
 
-      output += `🟢 ${ticker} — ${s.type.toUpperCase()} @ ${entry.toFixed(2)} (${data[idx].date.toISOString().slice(0, 10)})\n`;
-      output += `• Стоп-лосс: ${stop.toFixed(2)} (${riskPct.toFixed(2)}%)\n`;
-      output += `• Тейк-профит: ${target.toFixed(2)} (${rewardPct.toFixed(2)}%)\n`;
-      output += `• Риск на 1 бумагу: ${riskPerShare.toFixed(2)} руб\n`;
-      output += `• Макс. риск: ${maxRisk.toFixed(2)} руб (${riskPerTradePct}% от капитала)\n`;
-      output += `• Кол-во бумаг: ${qty} шт (на сумму ~${totalCost.toFixed(2)} руб)\n`;
-      output += `• ${s.type === 'buy' ? 'Покупать' : 'Продавать'} на следующий день\n\n`;
+      output += `🟢 ${ticker} — ${s.type.toUpperCase()} @ ${entry.toFixed(2)} (${data[idx].date.toISOString().slice(0, 10)})<br>`;
+output += `• Стоп-лосс: ${stop.toFixed(2)} (${riskPct.toFixed(2)}%)<br>`;
+output += `• Тейк-профит: ${target.toFixed(2)} (${rewardPct.toFixed(2)}%)<br>`;
+output += `• Риск на 1 бумагу: ${riskPerShare.toFixed(2)} руб<br>`;
+output += `• Макс. риск: ${maxRisk.toFixed(2)} руб (${riskPerTradePct}% от капитала)<br>`;
+output += `• Кол-во бумаг: ${qty} шт (на сумму ~${totalCost.toFixed(2)} руб)<br>`;
+output += `• ${s.type === 'buy' ? 'Покупать' : 'Продавать'} на следующий день<br><br>`;
     }
   }
 
@@ -164,7 +164,7 @@
         if (analysis) fullOutput += analysis + '\n';
       }
 
-      resultsDiv.textContent = fullOutput || 'Нет активных сигналов за текущий месяц.';
+      resultsDiv.innerHTML = fullOutput || 'Нет активных сигналов за текущий месяц.';
     }
 
     runFullScan();
