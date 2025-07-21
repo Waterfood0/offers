@@ -2,98 +2,143 @@
 <html lang="ru">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Дневной анализ SBER</title>
+<title>Технический анализ SBER (EMA + MACD)</title>
 <style>
-  body { font-family: Arial, sans-serif; padding: 20px; max-width: 600px; margin: auto; }
-  #price { font-size: 2em; margin-bottom: 10px; }
-  #signalsToggle { margin: 10px 0; cursor: pointer; color: blue; text-decoration: underline; }
-  #signalsList { display: none; border: 1px solid #ccc; padding: 10px; margin-bottom: 20px; max-height: 200px; overflow-y: auto; background: #f9f9f9;}
-  #notification { border: 2px solid #f39c12; background: #fff8e1; padding: 15px; margin-bottom: 20px; display: none; }
-  #notification button { margin-top: 10px; }
+  body { font-family: Arial, sans-serif; max-width: 700px; margin: 20px auto; padding: 10px; }
+  button { margin-right: 10px; padding: 7px 14px; cursor: pointer; }
+  input { width: 70px; padding: 5px; margin-right: 10px; }
+  #status { margin: 15px 0; font-weight: bold; }
+  #results { white-space: pre-wrap; background: #f9f9f9; padding: 15px; border-radius: 6px; min-height: 200px; }
 </style>
 </head>
 <body>
 
-<h1>Акция SBER (Дневной анализ)</h1>
-<div id="price">Текущая цена: ...</div>
-
-<div id="notification">
-  <div id="notificationText"></div>
-  <button id="btnOk">ОК</button>
-</div>
-
-<div id="signalsToggle">Показать последние 3 сделки</div>
-<div id="signalsList"></div>
+<h2>Технический анализ SBER (EMA + MACD)</h2>
 
 <div>
-  <label>Комиссия (%): <input type="number" id="commission" value="0.1" step="0.01" min="0" max="10"/></label>
-  <label>Минимальная прибыль (%): <input type="number" id="minProfit" value="0.3" step="0.01" min="0" max="100"/></label>
-  <button id="btnAnalyze">Запустить анализ</button>
+  <button onclick="selectInterval('60')">Часовой</button>
+  <button onclick="selectInterval('24')">Дневной</button>
 </div>
 
-<pre id="results" style="white-space: pre-wrap; background: #eee; padding: 10px; margin-top:20px; max-height:300px; overflow-y:auto;"></pre>
+<div style="margin-top:15px;">
+  <label>Комиссия %: <input type="number" id="commission" step="0.01" value="0.1"></label>
+  <label>Мин. прибыль %: <input type="number" id="minProfit" step="0.01" value="0.3"></label>
+  <button onclick="runAnalysis()">Запустить анализ</button>
+</div>
+
+<p id="status">Выберите интервал и нажмите "Запустить анализ"</p>
+
+<div id="results"></div>
 
 <script>
-// Заглушка для данных — имитация 100 дней с рандомом
+let interval = '60'; // по умолчанию часовой
 let candlesData = [];
 
+function selectInterval(val) {
+  interval = val;
+  document.getElementById('status').textContent = `Выбран интервал: ${interval === '24' ? 'Дневной' : 'Часовой'}`;
+  document.getElementById('results').textContent = '';
+}
+
 async function fetchData() {
-  const startDate = new Date(2021, 0, 1);
   candlesData = [];
-  let price = 250;
-  for(let i = 0; i < 100; i++) {
-    const date = new Date(startDate);
-    date.setDate(startDate.getDate() + i);
-    const open = price * (1 + (Math.random() - 0.5) / 100);
-    const close = open * (1 + (Math.random() - 0.5) / 100);
-    const high = Math.max(open, close) * (1 + Math.random() / 100);
-    const low = Math.min(open, close) * (1 - Math.random() / 100);
-    price = close;
-    candlesData.push({date, open, close, high, low});
+  const years = [2021, 2022, 2023, 2024, 2025];
+  const ticker = 'SBER';
+
+  for (const year of years) {
+    const from = `${year}-01-01`;
+    const till = `${year}-12-31`;
+    const url = `https://iss.moex.com/iss/engines/stock/markets/shares/boards/TQBR/securities/${ticker}/candles.json?interval=${interval}&from=${from}&till=${till}&sort_order=asc&limit=1000`;
+    try {
+      const res = await fetch(url);
+      const json = await res.json();
+      if (!json.candles || !json.candles.data) continue;
+      const cols = json.candles.columns;
+      const data = json.candles.data;
+      const dateIdx = cols.indexOf('begin');
+      const openIdx = cols.indexOf('open');
+      const highIdx = cols.indexOf('high');
+      const lowIdx = cols.indexOf('low');
+      const closeIdx = cols.indexOf('close');
+      const volumeIdx = cols.indexOf('volume');
+
+      const yearData = data.map(row => ({
+        date: new Date(row[dateIdx]),
+        open: row[openIdx],
+        high: row[highIdx],
+        low: row[lowIdx],
+        close: row[closeIdx],
+        volume: row[volumeIdx]
+      }));
+      candlesData = candlesData.concat(yearData);
+    } catch(e) {
+      console.error(`Ошибка загрузки данных за ${year}`, e);
+    }
   }
 }
 
+// EMA расчет
 function calculateEMA(data, period) {
   const k = 2 / (period + 1);
   const emaArray = [];
-  let emaPrev = data[0].close;
-  emaArray[0] = emaPrev;
-  for(let i = 1; i < data.length; i++) {
-    emaPrev = data[i].close * k + emaPrev * (1 - k);
-    emaArray.push(emaPrev);
+  let emaPrev = data[0].close; // стартуем с первого значения
+
+  for(let i = 0; i < data.length; i++) {
+    if(i === 0) {
+      emaArray.push(emaPrev);
+    } else {
+      const emaCurrent = data[i].close * k + emaPrev * (1 - k);
+      emaArray.push(emaCurrent);
+      emaPrev = emaCurrent;
+    }
   }
   return emaArray;
 }
 
-function calculateMACD(data, fastPeriod = 6, slowPeriod = 13, signalPeriod = 9) {
+// MACD расчет
+function calculateMACD(data, fastPeriod = 12, slowPeriod = 26, signalPeriod = 9) {
   const emaFast = calculateEMA(data, fastPeriod);
   const emaSlow = calculateEMA(data, slowPeriod);
   const macdLine = [];
+
   for(let i = 0; i < data.length; i++) {
     macdLine.push(emaFast[i] - emaSlow[i]);
   }
+
   const signalLine = calculateEMA(macdLine.map(val => ({close: val})), signalPeriod);
-  return {macdLine, signalLine};
+  const histogram = [];
+
+  for(let i = 0; i < data.length; i++) {
+    histogram.push(macdLine[i] - signalLine[i]);
+  }
+
+  return {macdLine, signalLine, histogram};
 }
 
+// Поиск сигналов пересечения EMA (5 и 15) и MACD (пересечение macdLine и signalLine)
 function findSignals(emaShort, emaLong, macdLine, signalLine) {
   const signals = [];
   for(let i = 1; i < emaShort.length; i++) {
     if(emaShort[i-1] === undefined || emaLong[i-1] === undefined) continue;
     if(macdLine[i-1] === undefined || signalLine[i-1] === undefined) continue;
 
+    // Покупка: EMA5 пересекает EMA15 вверх И MACD пересекает сигнальную линию вверх
     const emaCrossUp = (emaShort[i-1] < emaLong[i-1]) && (emaShort[i] > emaLong[i]);
-    const emaCrossDown = (emaShort[i-1] > emaLong[i-1]) && (emaShort[i] < emaLong[i]);
     const macdCrossUp = (macdLine[i-1] < signalLine[i-1]) && (macdLine[i] > signalLine[i]);
+
+    // Продажа: EMA5 пересекает EMA15 вниз И MACD пересекает сигнальную линию вниз
+    const emaCrossDown = (emaShort[i-1] > emaLong[i-1]) && (emaShort[i] < emaLong[i]);
     const macdCrossDown = (macdLine[i-1] > signalLine[i-1]) && (macdLine[i] < signalLine[i]);
 
-    if(emaCrossUp || macdCrossUp) signals.push({index: i, type: 'buy'});
-    else if(emaCrossDown || macdCrossDown) signals.push({index: i, type: 'sell'});
+    if(emaCrossUp && macdCrossUp) {
+      signals.push({index: i, type: 'buy'});
+    } else if(emaCrossDown && macdCrossDown) {
+      signals.push({index: i, type: 'sell'});
+    }
   }
   return signals;
 }
-
+// Поиск локального минимума в окне lookback перед index
 function findLocalMin(data, index, lookback = 10) {
   let minVal = data[index].low;
   for(let i = Math.max(0, index - lookback); i < index; i++) {
@@ -101,6 +146,8 @@ function findLocalMin(data, index, lookback = 10) {
   }
   return minVal;
 }
+
+// Поиск локального максимума в окне lookback перед index
 function findLocalMax(data, index, lookback = 10) {
   let maxVal = data[index].high;
   for(let i = Math.max(0, index - lookback); i < index; i++) {
@@ -109,6 +156,21 @@ function findLocalMax(data, index, lookback = 10) {
   return maxVal;
 }
 
+// Поиск даты выхода по тейк-профиту или стоп-лоссу
+function findExitDate(data, startIdx, targetPrice, stopPrice, type) {
+  for(let i = startIdx + 1; i < data.length; i++) {
+    if(type === 'buy') {
+      if(data[i].low <= stopPrice) return {date: data[i].date, reason: 'Стоп-лосс достигнут'};
+      if(data[i].high >= targetPrice) return {date: data[i].date, reason: 'Тейк-профит достигнут'};
+    } else {
+      if(data[i].high >= stopPrice) return {date: data[i].date, reason: 'Стоп-лосс достигнут'};
+      if(data[i].low <= targetPrice) return {date: data[i].date, reason: 'Тейк-профит достигнут'};
+    }
+  }
+  return {date: null, reason: 'Выход не достигнут'};
+}
+
+// Анализ сигналов, с учетом комиссии и минимальной желаемой прибыли
 function analyzeSignals(signals, commissionPct, minProfitPct) {
   const lookback = 10;
   let output = '';
@@ -118,7 +180,7 @@ function analyzeSignals(signals, commissionPct, minProfitPct) {
     return output;
   }
 
-  for(const s of signals.slice(-3)) {
+  for(const s of signals) {
     const idx = s.index;
     const type = s.type;
     const entryPrice = candlesData[idx].close;
@@ -126,111 +188,62 @@ function analyzeSignals(signals, commissionPct, minProfitPct) {
 
     if(type === 'buy') {
       stopLoss = findLocalMin(candlesData, idx, lookback);
-      if(stopLoss >= entryPrice) stopLoss = entryPrice * 0.985;
+      if(stopLoss >= entryPrice) stopLoss = entryPrice * 0.985; // минимальный стоп
       riskPct = ((entryPrice - stopLoss) / entryPrice) * 100;
       profitTarget = entryPrice + riskPct * 2 * entryPrice / 100;
       rewardPct = ((profitTarget - entryPrice) / entryPrice) * 100;
     } else {
       stopLoss = findLocalMax(candlesData, idx, lookback);
-      if(stopLoss <= entryPrice) stopLoss = entryPrice * 1.015;
+      if(stopLoss <= entryPrice) stopLoss = entryPrice * 1.015; // минимальный стоп для продажи
       riskPct = ((stopLoss - entryPrice) / entryPrice) * 100;
       profitTarget = entryPrice - riskPct * 2 * entryPrice / 100;
       rewardPct = ((entryPrice - profitTarget) / entryPrice) * 100;
     }
 
-    const totalCosts = commissionPct * 2;
+    const totalCosts = commissionPct * 2; // комиссия за вход и выход
     if (rewardPct - totalCosts < minProfitPct) {
       output += `Сигнал #${idx} (${type.toUpperCase()}): Прибыль ниже минимальной с учётом комиссии. Пропускаем.\n\n`;
       continue;
     }
 
+    const exitInfo = findExitDate(candlesData, idx, profitTarget, stopLoss, type);
+    const exitDateStr = exitInfo.date ? exitInfo.date.toISOString().slice(0,10) : 'не достигнута';
+
     output += `Сигнал #${idx} (${type.toUpperCase()}):\n` +
               `Дата входа: ${candlesData[idx].date.toISOString().slice(0,10)}\n` +
               `Цена входа: ${entryPrice.toFixed(2)}\n` +
               `Стоп-лосс: ${stopLoss.toFixed(2)} (${riskPct.toFixed(2)}%)\n` +
-              `Тейк-профит: ${profitTarget.toFixed(2)} (${rewardPct.toFixed(2)}%)\n\n`;
+              `Тейк-профит: ${profitTarget.toFixed(2)} (${rewardPct.toFixed(2)}%)\n` +
+              `Дата выхода: ${exitDateStr} (${exitInfo.reason})\n\n`;
   }
   return output;
 }
 
-// --- Показ/скрытие сделок ---
-const signalsToggle = document.getElementById('signalsToggle');
-const signalsList = document.getElementById('signalsList');
-
-signalsToggle.onclick = () => {
-  if(signalsList.style.display === 'none') {
-    signalsList.style.display = 'block';
-    signalsToggle.textContent = 'Скрыть последние 3 сделки';
-  } else {
-    signalsList.style.display = 'none';
-    signalsToggle.textContent = 'Показать последние 3 сделки';
-  }
-};
-
-// --- Обновление цены и анализ ---
 async function runAnalysis() {
-  document.getElementById('price').textContent = 'Текущая цена: ...';
+  document.getElementById('status').textContent = 'Загрузка данных...';
   document.getElementById('results').textContent = '';
   await fetchData();
 
-  if(candlesData.length === 0) {
-    document.getElementById('price').textContent = 'Данные не загружены';
+  if (candlesData.length === 0) {
+    document.getElementById('status').textContent = 'Данные не загружены.';
     return;
   }
-
-  const lastCandle = candlesData[candlesData.length - 1];
-  document.getElementById('price').textContent = `Текущая цена: ${lastCandle.close.toFixed(2)} ₽ (${lastCandle.date.toISOString().slice(0,10)})`;
 
   const commissionPct = parseFloat(document.getElementById('commission').value) || 0;
   const minProfitPct = parseFloat(document.getElementById('minProfit').value) || 0;
 
-  const emaShort = calculateEMA(candlesData, 3);
-  const emaLong = calculateEMA(candlesData, 8);
-  const {macdLine, signalLine} = calculateMACD(candlesData, 6, 13, 9);
+  const emaShort = calculateEMA(candlesData, 5);
+  const emaLong = calculateEMA(candlesData, 15);
+  const {macdLine, signalLine} = calculateMACD(candlesData);
+
   const signals = findSignals(emaShort, emaLong, macdLine, signalLine);
 
-  // Отобразить последние 3 сделки рядом
-  let last3Signals = signals.slice(-3);
-  signalsList.innerHTML = '';
-  if(last3Signals.length === 0) {
-    signalsList.textContent = 'Последних сделок нет.';
-  } else {
-    last3Signals.forEach(s => {
-      const idx = s.index;
-      const type = s.type.toUpperCase();
-      const date = candlesData[idx].date.toISOString().slice(0,10);
-      const price = candlesData[idx].close.toFixed(2);
-      const div = document.createElement('div');
-      div.textContent = `${date} — Сделка ${type} по цене ${price} ₽`;
-      signalsList.appendChild(div);
-    });
-  }
-
   const analysisText = analyzeSignals(signals, commissionPct, minProfitPct);
+
   document.getElementById('results').textContent = analysisText;
+  document.getElementById('status').textContent = 'Анализ завершён.';
 }
+</script>
 
-// Запуск анализа по кнопке
-document.getElementById('btnAnalyze').onclick = runAnalysis;
-
-// --- Уведомления ---
-const notification = document.getElementById('notification');
-const notificationText = document.getElementById('notificationText');
-const btnOk = document.getElementById('btnOk');
-
-function showNotification(text) {
-  notificationText.textContent = text;
-  notification.style.display = 'block';
-}
-
-btnOk.onclick = () => {
-  notification.style.display = 'none';
-};
-
-// Тестовое уведомление через 5 секунд
-setTimeout(() => {
-  showNotification('Тест: новая сделка открылась!');
-}, 5000);
-
-// Инициализация анализа при загрузке
-runAnalysis();
+</body>
+</html>
