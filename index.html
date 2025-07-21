@@ -192,4 +192,45 @@ async function runAnalysis() {
   // Отобразить последние 3 сделки рядом
   let last3Signals = signals.slice(-3);
   signalsList.innerHTML = '';
-  if(last3Signals.length === 0
+  if(last3Signals.length === 0) {
+    signalsList.textContent = 'Последних сделок нет.';
+  } else {
+    last3Signals.forEach(s => {
+      const idx = s.index;
+      const type = s.type.toUpperCase();
+      const date = candlesData[idx].date.toISOString().slice(0,10);
+      const price = candlesData[idx].close.toFixed(2);
+      const div = document.createElement('div');
+      div.textContent = `${date} — Сделка ${type} по цене ${price} ₽`;
+      signalsList.appendChild(div);
+    });
+  }
+
+  const analysisText = analyzeSignals(signals, commissionPct, minProfitPct);
+  document.getElementById('results').textContent = analysisText;
+}
+
+// Запуск анализа по кнопке
+document.getElementById('btnAnalyze').onclick = runAnalysis;
+
+// --- Уведомления ---
+const notification = document.getElementById('notification');
+const notificationText = document.getElementById('notificationText');
+const btnOk = document.getElementById('btnOk');
+
+function showNotification(text) {
+  notificationText.textContent = text;
+  notification.style.display = 'block';
+}
+
+btnOk.onclick = () => {
+  notification.style.display = 'none';
+};
+
+// Тестовое уведомление через 5 секунд
+setTimeout(() => {
+  showNotification('Тест: новая сделка открылась!');
+}, 5000);
+
+// Инициализация анализа при загрузке
+runAnalysis();
