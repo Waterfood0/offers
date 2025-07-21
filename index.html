@@ -1,153 +1,144 @@
-<!DOCTYPE html>
-<html lang="ru">
+<!DOCTYPE html><html lang="ru">
 <head>
   <meta charset="UTF-8" />
-  <title>Технический анализ (EMA + MACD)</title>
+  <title>Активные сигналы по акциям (EMA + MACD)</title>
   <style>
     body { font-family: Arial, sans-serif; max-width: 900px; margin: 20px auto; padding: 10px; }
-    button { margin: 5px; padding: 8px 14px; cursor: pointer; }
-    #results, #allSignals { white-space: pre-wrap; background: #f9f9f9; padding: 15px; border-radius: 6px; min-height: 200px; margin-top: 20px; }
-    h2 { margin-top: 30px; }
+    button { margin: 5px; padding: 7px 14px; cursor: pointer; }
+    .section { margin-top: 20px; }
+    .card { background: #f1f1f1; padding: 10px; margin-bottom: 10px; border-radius: 6px; }
+    .signal { white-space: pre-wrap; font-size: 14px; }
+    h2, h3 { margin-bottom: 5px; }
   </style>
 </head>
-<body>
-
-<h1>Актуальные сигналы (EMA + MACD)</h1>
-
+<body><h2>Активные сигналы по всем акциям</h2>
+<div id="all-signals"></div><h2>Выбор акций</h2>
 <div>
-  <strong>Выберите тикер:</strong><br>
-  <button onclick="filterByTicker('ALL')">Все</button>
-  <button onclick="filterByTicker('SBER')">SBER</button>
-  <button onclick="filterByTicker('GAZP')">GAZP</button>
-  <button onclick="filterByTicker('LKOH')">LKOH</button>
-  <button onclick="filterByTicker('MGNT')">MGNT</button>
-  <button onclick="filterByTicker('YNDX')">YNDX</button>
-</div>
-
-<div id="status">Загрузка данных...</div>
-
-<h2>Все актуальные сигналы за текущий месяц</h2>
-<div id="allSignals">Загрузка...</div>
-
-<h2>Фильтр по тикеру</h2>
-<div id="results">Выберите тикер...</div>
-
-<script>
+  <button onclick="showTickerSignals('SBER')">SBER</button>
+  <button onclick="showTickerSignals('GAZP')">GAZP</button>
+  <button onclick="showTickerSignals('LKOH')">LKOH</button>
+  <button onclick="showTickerSignals('MGNT')">MGNT</button>
+  <button onclick="showTickerSignals('YNDX')">YNDX</button>
+</div><div class="section">
+  <h3>Сигналы выбранной акции</h3>
+  <div id="ticker-signals"></div>
+</div><script>
 const tickers = ['SBER', 'GAZP', 'LKOH', 'MGNT', 'YNDX'];
-const interval = '60'; // часовой
-let allSignals = [];
+let allSignalsData = {}; // по тикерам
+
+function getCurrentMonthStart() {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth(), 1);
+}
+
+function filterCurrentMonth(signals, data) {
+  const start = getCurrentMonthStart();
+  return signals.filter(s => {
+    const signalDate = data[s.index]?.date;
+    return signalDate && signalDate >= start && !s.closed;
+  });
+}
+
+function findSignals(data) {
+  const emaShort = calculateEMA(data, 5);
+  const emaLong = calculateEMA(data, 15);
+  const { macdLine, signalLine } = calculateMACD(data);
+  const signals = [];
+  for (let i = 1; i < data.length; i++) {
+    const emaCrossUp = emaShort[i - 1] < emaLong[i - 1] && emaShort[i] > emaLong[i];
+    const emaCrossDown = emaShort[i - 1] > emaLong[i - 1] && emaShort[i] < emaLong[i];
+    const macdCrossUp = macdLine[i - 1] < signalLine[i - 1] && macdLine[i] > signalLine[i];
+    const macdCrossDown = macdLine[i - 1] > signalLine[i - 1] && macdLine[i] < signalLine[i];
+    if (emaCrossUp || macdCrossUp) signals.push({ index: i, type: 'buy', closed: false });
+    else if (emaCrossDown || macdCrossDown) signals.push({ index: i, type: 'sell', closed: false });
+  }
+  return signals;
+}
 
 function calculateEMA(data, period) {
   const k = 2 / (period + 1);
-  let ema = data[0].close;
-  return data.map((d, i) => {
-    if (i === 0) return ema;
-    ema = d.close * k + ema * (1 - k);
-    return ema;
-  });
+  const ema = [];
+  let prev = data[0].close;
+  for (let i = 0; i < data.length; i++) {
+    prev = data[i].close * k + prev * (1 - k);
+    ema.push(prev);
+  }
+  return ema;
 }
 
 function calculateMACD(data, fast = 6, slow = 13, signal = 9) {
   const fastEMA = calculateEMA(data, fast);
   const slowEMA = calculateEMA(data, slow);
-  const macd = fastEMA.map((v, i) => v - slowEMA[i]);
-  const signalLine = calculateEMA(macd.map(v => ({close: v})), signal);
-  const histogram = macd.map((v, i) => v - signalLine[i]);
-  return { macd, signalLine, histogram };
+  const macd = fastEMA.map((val, i) => val - slowEMA[i]);
+  const signalLine = calculateEMA(macd.map(v => ({ close: v })), signal);
+  const histogram = macd.map((val, i) => val - signalLine[i]);
+  return { macdLine: macd, signalLine, histogram };
 }
 
-function findSignals(data, emaShort, emaLong, macdLine, signalLine) {
-  const signals = [];
-  for (let i = 1; i < data.length; i++) {
-    const crossUp = emaShort[i-1] < emaLong[i-1] && emaShort[i] > emaLong[i];
-    const crossDown = emaShort[i-1] > emaLong[i-1] && emaShort[i] < emaLong[i];
-    const macdUp = macdLine[i-1] < signalLine[i-1] && macdLine[i] > signalLine[i];
-    const macdDown = macdLine[i-1] > signalLine[i-1] && macdLine[i] < signalLine[i];
-
-    if (crossUp || macdUp) signals.push({ type: 'BUY', index: i });
-    else if (crossDown || macdDown) signals.push({ type: 'SELL', index: i });
-  }
-  return signals;
+function signalToText(signal, data, ticker) {
+  const d = data[signal.index];
+  return `Тикер: ${ticker}\nДата входа: ${d.date.toISOString().slice(0,10)}\nЦена: ${d.close.toFixed(2)}\nТип сигнала: ${signal.type.toUpperCase()}\n`;
 }
 
-function filterThisMonth(date) {
-  const now = new Date();
-  return date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth();
-}
-
-async function fetchCandles(ticker) {
-  const to = new Date().toISOString().slice(0, 10);
+async function loadDataForTicker(ticker) {
   const from = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10);
-  const url = `https://iss.moex.com/iss/engines/stock/markets/shares/boards/TQBR/securities/${ticker}/candles.json?interval=${interval}&from=${from}&till=${to}&limit=1000`;
+  const url = `https://iss.moex.com/iss/engines/stock/markets/shares/boards/TQBR/securities/${ticker}/candles.json?interval=60&from=${from}&limit=1000`;
   try {
     const res = await fetch(url);
     const json = await res.json();
     const cols = json.candles.columns;
-    const data = json.candles.data || [];
-    const [dateIdx, openIdx, highIdx, lowIdx, closeIdx] = ['begin','open','high','low','close'].map(k => cols.indexOf(k));
-    return data.map(row => ({
-      date: new Date(row[dateIdx]),
-      open: row[openIdx],
-      high: row[highIdx],
-      low: row[lowIdx],
-      close: row[closeIdx],
-    }));
+    const data = json.candles.data.map(row => {
+      const obj = {};
+      cols.forEach((key, i) => obj[key] = row[i]);
+      return {
+        date: new Date(obj.begin),
+        open: obj.open,
+        high: obj.high,
+        low: obj.low,
+        close: obj.close,
+        volume: obj.volume
+      };
+    });
+    const signals = findSignals(data);
+    const filtered = filterCurrentMonth(signals, data);
+    allSignalsData[ticker] = { data, signals: filtered };
   } catch (e) {
-    console.error(`Ошибка загрузки ${ticker}:`, e);
-    return [];
+    console.error(`Ошибка загрузки ${ticker}`, e);
   }
 }
 
-async function analyzeTicker(ticker) {
-  const candles = await fetchCandles(ticker);
-  if (candles.length < 20) return [];
-
-  const ema5 = calculateEMA(candles, 5);
-  const ema15 = calculateEMA(candles, 15);
-  const { macd, signalLine } = calculateMACD(candles);
-  const signals = findSignals(candles, ema5, ema15, macd, signalLine);
-
-  return signals.map(s => {
-    const c = candles[s.index];
-    return {
-      ticker,
-      type: s.type,
-      date: c.date,
-      price: c.close,
-    };
-  }).filter(s => filterThisMonth(s.date));
-}
-
-async function runAnalysis() {
-  document.getElementById('status').textContent = 'Загружаем данные...';
-  allSignals = [];
-
+function renderAllSignals() {
+  const container = document.getElementById('all-signals');
+  container.innerHTML = '';
   for (const ticker of tickers) {
-    const result = await analyzeTicker(ticker);
-    allSignals = allSignals.concat(result);
+    const block = document.createElement('div');
+    block.className = 'card';
+    const signals = allSignalsData[ticker]?.signals || [];
+    if (signals.length === 0) continue;
+    block.innerHTML = `<strong>${ticker}</strong><br>` + signals.map(s => signalToText(s, allSignalsData[ticker].data, ticker)).join('\n')
+      .replace(/\n/g, '<br>');
+    container.appendChild(block);
   }
-
-  updateAllSignals();
-  document.getElementById('status').textContent = `Обновлено: ${new Date().toLocaleTimeString()}`;
 }
 
-function updateAllSignals() {
-  const allText = allSignals.map(s =>
-    `${s.ticker} | ${s.type} | ${s.date.toISOString().slice(0, 10)} | Цена: ${s.price.toFixed(2)}`
-  ).join('\n');
-  document.getElementById('allSignals').textContent = allText || 'Нет сигналов за текущий месяц.';
+function showTickerSignals(ticker) {
+  const container = document.getElementById('ticker-signals');
+  container.innerHTML = '';
+  const tickerData = allSignalsData[ticker];
+  if (!tickerData || tickerData.signals.length === 0) {
+    container.innerHTML = 'Нет сигналов для ' + ticker;
+    return;
+  }
+  const signals = tickerData.signals.slice(-3).reverse();
+  container.innerHTML = signals.map(s => '<div class="card signal">' + signalToText(s, tickerData.data, ticker).replace(/\n/g, '<br>') + '</div>').join('');
 }
 
-function filterByTicker(ticker) {
-  const filtered = ticker === 'ALL' ? allSignals : allSignals.filter(s => s.ticker === ticker);
-  const resultText = filtered.map(s =>
-    `${s.ticker} | ${s.type} | ${s.date.toISOString().slice(0, 10)} | Цена: ${s.price.toFixed(2)}`
-  ).join('\n');
-  document.getElementById('results').textContent = resultText || 'Нет сигналов.';
+async function loadAll() {
+  await Promise.all(tickers.map(t => loadDataForTicker(t)));
+  renderAllSignals();
 }
 
-runAnalysis();
-setInterval(runAnalysis, 60_000); // автообновление каждую минуту
-</script>
-</body>
+loadAll();
+setInterval(loadAll, 60000); // автообновление каждую минуту
+</script></body>
 </html>
