@@ -33,9 +33,9 @@ const tickers = ['SBER', 'GAZP', 'LKOH', 'MGNT', 'YNDX'];
 let interval = '60';
 let allData = {};
 let allActiveSignals = {};
+let updateTimer = null;
 
 async function fetchDataForTicker(ticker) {
-  const candles = [];
   const now = new Date();
   const currentYear = now.getFullYear();
   const url = `https://iss.moex.com/iss/engines/stock/markets/shares/boards/TQBR/securities/${ticker}/candles.json?interval=${interval}&from=${currentYear}-01-01&till=${currentYear}-12-31&sort_order=asc&limit=1000`;
@@ -161,11 +161,11 @@ function renderSignalBlock(ticker, signals) {
   ).join('\n');
 }
 
-async function init() {
-  const allOutput = [];
-  const buttonWrap = document.getElementById('tickerButtons');
+async function updateAll() {
   const allDiv = document.getElementById('allSignals');
-  allDiv.textContent = 'Загрузка...';
+  allDiv.textContent = 'Обновление...';
+  allActiveSignals = {};
+  const allOutput = [];
 
   for (const ticker of tickers) {
     const data = await fetchDataForTicker(ticker);
@@ -177,20 +177,38 @@ async function init() {
 
     const signals = findSignals(data, emaShort, emaLong, macdLine, signalLine);
     const active = analyze(data, signals);
-
     allActiveSignals[ticker] = active;
-    allOutput.push(renderSignalBlock(ticker, active));
 
+    allOutput.push(renderSignalBlock(ticker, active));
+  }
+
+  const time = new Date().toLocaleTimeString();
+  allDiv.textContent = allOutput.join('\n') + `\nОбновлено: ${time}`;
+}
+
+function setupTickerButtons() {
+  const buttonWrap = document.getElementById('tickerButtons');
+  buttonWrap.innerHTML = '';
+  for (const ticker of tickers) {
     const btn = document.createElement('button');
     btn.textContent = ticker;
     btn.onclick = () => {
-      const out = renderSignalBlock(ticker, active);
+      const out = renderSignalBlock(ticker, allActiveSignals[ticker] || []);
       document.getElementById('results').textContent = out || 'Нет сигналов';
     };
     buttonWrap.appendChild(btn);
   }
+}
 
-  allDiv.textContent = allOutput.join('\n');
+function startAutoRefresh() {
+  if (updateTimer) clearInterval(updateTimer);
+  updateTimer = setInterval(updateAll, 60 * 1000); // каждые 60 сек
+}
+
+async function init() {
+  setupTickerButtons();
+  await updateAll();
+  startAutoRefresh();
 }
 
 init();
