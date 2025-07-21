@@ -32,18 +32,13 @@
 
 <script>
 let interval = '60'; // по умолчанию часовой
-let candlesData = [];
+let allData = {}; // ключ - тикер, значение - данные свечей
 
-function selectInterval(val) {
-  interval = val;
-  document.getElementById('status').textContent = `Выбран интервал: ${interval === '24' ? 'Дневной' : 'Часовой'}`;
-  document.getElementById('results').textContent = '';
-}
+const tickers = ['SBER', 'GAZP', 'LKOH', 'TATN', 'GMKN'];
 
-async function fetchData() {
-  candlesData = [];
+async function fetchData(ticker) {
+  let candlesData = [];
   const years = [2021, 2022, 2023, 2024, 2025];
-  const ticker = 'SBER';
 
   for (const year of years) {
     const from = `${year}-01-01`;
@@ -72,9 +67,10 @@ async function fetchData() {
       }));
       candlesData = candlesData.concat(yearData);
     } catch(e) {
-      console.error(`Ошибка загрузки данных за ${year}`, e);
+      console.error(`Ошибка загрузки данных за ${year} для ${ticker}`, e);
     }
   }
+  return candlesData;
 }
 
 // EMA расчет
@@ -173,13 +169,14 @@ function findExitDate(data, startIdx, targetPrice, stopPrice, type) {
 }
 
 // Анализ сигналов, с учетом комиссии и минимальной желаемой прибыли
-function analyzeSignals(signals, commissionPct, minProfitPct) {
+function analyzeSignals(candlesData, signals, commissionPct, minProfitPct) {
   const lookback = 10;
   let output = '';
+  let activeSignals = [];
 
   if(signals.length === 0) {
-    output = 'Сигналов для входа не обнаружено.';
-    return output;
+    output = 'Сигналов для входа не обнаружено.\n\n';
+    return {text: output, active: activeSignals};
   }
 
   for(const s of signals) {
@@ -190,19 +187,19 @@ function analyzeSignals(signals, commissionPct, minProfitPct) {
 
     if(type === 'buy') {
       stopLoss = findLocalMin(candlesData, idx, lookback);
-      if(stopLoss >= entryPrice) stopLoss = entryPrice * 0.985; // минимальный стоп
+      if(stopLoss >= entryPrice) stopLoss = entryPrice * 0.985;
       riskPct = ((entryPrice - stopLoss) / entryPrice) * 100;
       profitTarget = entryPrice + riskPct * 2 * entryPrice / 100;
       rewardPct = ((profitTarget - entryPrice) / entryPrice) * 100;
     } else {
       stopLoss = findLocalMax(candlesData, idx, lookback);
-      if(stopLoss <= entryPrice) stopLoss = entryPrice * 1.015; // минимальный стоп для продажи
+      if(stopLoss <= entryPrice) stopLoss = entryPrice * 1.015;
       riskPct = ((stopLoss - entryPrice) / entryPrice) * 100;
       profitTarget = entryPrice - riskPct * 2 * entryPrice / 100;
       rewardPct = ((entryPrice - profitTarget) / entryPrice) * 100;
     }
 
-    const totalCosts = commissionPct * 2; // комиссия за вход и выход
+    const totalCosts = commissionPct * 2;
     if (rewardPct - totalCosts < minProfitPct) {
       output += `Сигнал #${idx} (${type.toUpperCase()}): Прибыль ниже минимальной с учётом комиссии. Пропускаем.\n\n`;
       continue;
@@ -217,33 +214,68 @@ function analyzeSignals(signals, commissionPct, minProfitPct) {
               `Стоп-лосс: ${stopLoss.toFixed(2)} (${riskPct.toFixed(2)}%)\n` +
               `Тейк-профит: ${profitTarget.toFixed(2)} (${rewardPct.toFixed(2)}%)\n` +
               `Дата выхода: ${exitDateStr} (${exitInfo.reason})\n\n`;
+
+    activeSignals.push({
+      index: idx,
+      type,
+      entryDate: candlesData[idx].date.toISOString().slice(0,10),
+      entryPrice: entryPrice.toFixed(2),
+      stopLoss: stopLoss.toFixed(2),
+      takeProfit: profitTarget.toFixed(2),
+      exitDate: exitDateStr,
+      exitReason: exitInfo.reason
+    });
   }
-  return output;
+  return {text: output, active: activeSignals};
 }
 
 async function runAnalysis() {
   document.getElementById('status').textContent = 'Загрузка данных...';
   document.getElementById('results').textContent = '';
-  await fetchData();
-
-  if (candlesData.length === 0) {
-    document.getElementById('status').textContent = 'Данные не загружены.';
-    return;
-  }
+  document.getElementById('activeTradesContent').textContent = 'Сигналы отсутствуют.';
 
   const commissionPct = parseFloat(document.getElementById('commission').value) || 0;
   const minProfitPct = parseFloat(document.getElementById('minProfit').value) || 0;
 
-  const emaShort = calculateEMA(candlesData, 5);
-  const emaLong = calculateEMA(candlesData, 15);
-  const {macdLine, signalLine} = calculateMACD(candlesData);
+  let overallText = '';
+  let overallActive = [];
 
-  const signals = findSignals(emaShort, emaLong, macdLine, signalLine);
+  for (const ticker of tickers) {
+    const candlesData = await fetchData(ticker);
+    if (candlesData.length === 0) {
+      overallText += `Данные для ${ticker} не загружены.\n\n`;
+      continue;
+    }
 
-  const analysisText = analyzeSignals(signals, commissionPct, minProfitPct);
+    const emaShort = calculateEMA(candlesData, 5);
+    const emaLong = calculateEMA(candlesData, 15);
+    const {macdLine, signalLine} = calculateMACD(candlesData);
+    const signals = findSignals(emaShort, emaLong, macdLine, signalLine);
+    const analysis = analyzeSignals(candlesData, signals, commissionPct, minProfitPct);
 
-  document.getElementById('results').textContent = analysisText;
+    overallText += `=== Анализ для ${ticker} ===\n` + analysis.text + '\n';
+    if(analysis.active.length) {
+      overallActive.push({ticker, signals: analysis.active});
+    }
+  }
+
+  document.getElementById('results').textContent = overallText || 'Нет данных для анализа.';
   document.getElementById('status').textContent = 'Анализ завершён.';
+
+  // Формируем текст для блока актуальных сделок
+  if(overallActive.length === 0) {
+    document.getElementById('activeTradesContent').textContent = 'Сигналы отсутствуют.';
+  } else {
+    let activeText = '';
+    overallActive.forEach(item => {
+      activeText += `Тикер: ${item.ticker}\n`;
+      item.signals.forEach(s => {
+        activeText += `  [${s.type.toUpperCase()}] Вход: ${s.entryDate}, Цена: ${s.entryPrice}, SL: ${s.stopLoss}, TP: ${s.takeProfit}, Выход: ${s.exitDate} (${s.exitReason})\n`;
+      });
+      activeText += '\n';
+    });
+    document.getElementById('activeTradesContent').textContent = activeText;
+  }
 }
 </script>
 
