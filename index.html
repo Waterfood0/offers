@@ -31,8 +31,9 @@
 <div id="results"></div>
 
 <script>
-let interval = '60'; // по умолчанию часовой
-let candlesData = [];
+let interval = '24'; // дневной по умолчанию
+let candlesByTicker = {};
+let tickers = ['SBER', 'GAZP', 'LKOH']; // можно добавлять любые
 
 function selectInterval(val) {
   interval = val;
@@ -40,15 +41,14 @@ function selectInterval(val) {
   document.getElementById('results').textContent = '';
 }
 
-async function fetchData() {
-  candlesData = [];
-  const years = [2021, 2022, 2023, 2024, 2025];
-  const ticker = 'SBER';
-
+// Получить данные по одной акции
+async function fetchDataForTicker(ticker) {
+  let candles = [];
+  const years = [2022, 2023, 2024, 2025];
   for (const year of years) {
     const from = `${year}-01-01`;
     const till = `${year}-12-31`;
-    const url = `https://iss.moex.com/iss/engines/stock/markets/shares/boards/TQBR/securities/${ticker}/candles.json?interval=${interval}&from=${from}&till=${till}&sort_order=asc&limit=1000`;
+    const url = `https://iss.moex.com/iss/engines/stock/markets/shares/boards/TQBR/securities/${ticker}/candles.json?interval=${interval}&from=${from}&till=${till}&limit=1000`;
     try {
       const res = await fetch(url);
       const json = await res.json();
@@ -70,182 +70,46 @@ async function fetchData() {
         close: row[closeIdx],
         volume: row[volumeIdx]
       }));
-      candlesData = candlesData.concat(yearData);
+      candles = candles.concat(yearData);
     } catch(e) {
-      console.error(`Ошибка загрузки данных за ${year}`, e);
+      console.error(`Ошибка загрузки ${ticker}:`, e);
     }
   }
+  candlesByTicker[ticker] = candles;
 }
 
-// EMA расчет
-function calculateEMA(data, period) {
-  const k = 2 / (period + 1);
-  const emaArray = [];
-  let emaPrev = data[0].close; // стартуем с первого значения
-
-  for(let i = 0; i < data.length; i++) {
-    if(i === 0) {
-      emaArray.push(emaPrev);
-    } else {
-      const emaCurrent = data[i].close * k + emaPrev * (1 - k);
-      emaArray.push(emaCurrent);
-      emaPrev = emaCurrent;
-    }
-  }
-  return emaArray;
-}
-
-// MACD расчет
-// Измененные периоды EMA и MACD
-function calculateMACD(data, fastPeriod = 6, slowPeriod = 13, signalPeriod = 9) {
-  const emaFast = calculateEMA(data, fastPeriod);
-  const emaSlow = calculateEMA(data, slowPeriod);
-  const macdLine = [];
-
-  for(let i = 0; i < data.length; i++) {
-    macdLine.push(emaFast[i] - emaSlow[i]);
-  }
-
-  const signalLine = calculateEMA(macdLine.map(val => ({close: val})), signalPeriod);
-  const histogram = [];
-
-  for(let i = 0; i < data.length; i++) {
-    histogram.push(macdLine[i] - signalLine[i]);
-  }
-
-  return {macdLine, signalLine, histogram};
-}
-
-// Более мягкий поиск сигналов: если пересекается EMA или MACD, сигнал
-function findSignals(emaShort, emaLong, macdLine, signalLine) {
-  const signals = [];
-  for(let i = 1; i < emaShort.length; i++) {
-    if(emaShort[i-1] === undefined || emaLong[i-1] === undefined) continue;
-    if(macdLine[i-1] === undefined || signalLine[i-1] === undefined) continue;
-
-    const emaCrossUp = (emaShort[i-1] < emaLong[i-1]) && (emaShort[i] > emaLong[i]);
-    const emaCrossDown = (emaShort[i-1] > emaLong[i-1]) && (emaShort[i] < emaLong[i]);
-
-    const macdCrossUp = (macdLine[i-1] < signalLine[i-1]) && (macdLine[i] > signalLine[i]);
-    const macdCrossDown = (macdLine[i-1] > signalLine[i-1]) && (macdLine[i] < signalLine[i]);
-
-    // Сигнал покупки, если пересекли EMA вверх ИЛИ MACD вверх
-    if(emaCrossUp || macdCrossUp) {
-      signals.push({index: i, type: 'buy'});
-    }
-    // Сигнал продажи, если пересекли EMA вниз ИЛИ MACD вниз
-    else if(emaCrossDown || macdCrossDown) {
-      signals.push({index: i, type: 'sell'});
-    }
-  }
-  return signals;
-}
-// Поиск локального минимума в окне lookback перед index
-function findLocalMin(data, index, lookback = 10) {
-  let minVal = data[index].low;
-  for(let i = Math.max(0, index - lookback); i < index; i++) {
-    if(data[i].low < minVal) minVal = data[i].low;
-  }
-  return minVal;
-}
-
-// Поиск локального максимума в окне lookback перед index
-function findLocalMax(data, index, lookback = 10) {
-  let maxVal = data[index].high;
-  for(let i = Math.max(0, index - lookback); i < index; i++) {
-    if(data[i].high > maxVal) maxVal = data[i].high;
-  }
-  return maxVal;
-}
-
-// Поиск даты выхода по тейк-профиту или стоп-лоссу
-function findExitDate(data, startIdx, targetPrice, stopPrice, type) {
-  for(let i = startIdx + 1; i < data.length; i++) {
-    if(type === 'buy') {
-      if(data[i].low <= stopPrice) return {date: data[i].date, reason: 'Стоп-лосс достигнут'};
-      if(data[i].high >= targetPrice) return {date: data[i].date, reason: 'Тейк-профит достигнут'};
-    } else {
-      if(data[i].high >= stopPrice) return {date: data[i].date, reason: 'Стоп-лосс достигнут'};
-      if(data[i].low <= targetPrice) return {date: data[i].date, reason: 'Тейк-профит достигнут'};
-    }
-  }
-  return {date: null, reason: 'Выход не достигнут'};
-}
-
-// Анализ сигналов, с учетом комиссии и минимальной желаемой прибыли
-function analyzeSignals(signals, commissionPct, minProfitPct) {
-  const lookback = 10;
-  let output = '';
-
-  if(signals.length === 0) {
-    output = 'Сигналов для входа не обнаружено.';
-    return output;
-  }
-
-  for(const s of signals) {
-    const idx = s.index;
-    const type = s.type;
-    const entryPrice = candlesData[idx].close;
-    let stopLoss, riskPct, profitTarget, rewardPct;
-
-    if(type === 'buy') {
-      stopLoss = findLocalMin(candlesData, idx, lookback);
-      if(stopLoss >= entryPrice) stopLoss = entryPrice * 0.985; // минимальный стоп
-      riskPct = ((entryPrice - stopLoss) / entryPrice) * 100;
-      profitTarget = entryPrice + riskPct * 2 * entryPrice / 100;
-      rewardPct = ((profitTarget - entryPrice) / entryPrice) * 100;
-    } else {
-      stopLoss = findLocalMax(candlesData, idx, lookback);
-      if(stopLoss <= entryPrice) stopLoss = entryPrice * 1.015; // минимальный стоп для продажи
-      riskPct = ((stopLoss - entryPrice) / entryPrice) * 100;
-      profitTarget = entryPrice - riskPct * 2 * entryPrice / 100;
-      rewardPct = ((entryPrice - profitTarget) / entryPrice) * 100;
-    }
-
-    const totalCosts = commissionPct * 2; // комиссия за вход и выход
-    if (rewardPct - totalCosts < minProfitPct) {
-      output += `Сигнал #${idx} (${type.toUpperCase()}): Прибыль ниже минимальной с учётом комиссии. Пропускаем.\n\n`;
-      continue;
-    }
-
-    const exitInfo = findExitDate(candlesData, idx, profitTarget, stopLoss, type);
-    const exitDateStr = exitInfo.date ? exitInfo.date.toISOString().slice(0,10) : 'не достигнута';
-
-    output += `Сигнал #${idx} (${type.toUpperCase()}):\n` +
-              `Дата входа: ${candlesData[idx].date.toISOString().slice(0,10)}\n` +
-              `Цена входа: ${entryPrice.toFixed(2)}\n` +
-              `Стоп-лосс: ${stopLoss.toFixed(2)} (${riskPct.toFixed(2)}%)\n` +
-              `Тейк-профит: ${profitTarget.toFixed(2)} (${rewardPct.toFixed(2)}%)\n` +
-              `Дата выхода: ${exitDateStr} (${exitInfo.reason})\n\n`;
-  }
-  return output;
-}
-
+// Анализ по всем акциям
 async function runAnalysis() {
   document.getElementById('status').textContent = 'Загрузка данных...';
   document.getElementById('results').textContent = '';
-  await fetchData();
+  candlesByTicker = {};
 
-  if (candlesData.length === 0) {
-    document.getElementById('status').textContent = 'Данные не загружены.';
-    return;
+  for (const ticker of tickers) {
+    await fetchDataForTicker(ticker);
+    const data = candlesByTicker[ticker];
+    if (!data || data.length === 0) continue;
+
+    const emaShort = calculateEMA(data, 5);
+    const emaLong = calculateEMA(data, 15);
+    const {macdLine, signalLine} = calculateMACD(data);
+    const signals = findSignals(emaShort, emaLong, macdLine, signalLine);
+    const analysis = analyzeSignals(signals, 0.1, 0.3, data, ticker);
+    
+    document.getElementById('results').textContent += `=== ${ticker} ===\n` + analysis + '\n\n';
+
+    if (analysis.includes('Сигнал')) {
+      sendToTelegram(`📈 Новый сигнал по ${ticker}\n\n` + analysis);
+    }
   }
 
-  const commissionPct = parseFloat(document.getElementById('commission').value) || 0;
-  const minProfitPct = parseFloat(document.getElementById('minProfit').value) || 0;
-
-  const emaShort = calculateEMA(candlesData, 5);
-  const emaLong = calculateEMA(candlesData, 15);
-  const {macdLine, signalLine} = calculateMACD(candlesData);
-
-  const signals = findSignals(emaShort, emaLong, macdLine, signalLine);
-
-  const analysisText = analyzeSignals(signals, commissionPct, minProfitPct);
-
-  document.getElementById('results').textContent = analysisText;
   document.getElementById('status').textContent = 'Анализ завершён.';
 }
-</script>
 
+// Отправка на Python-сервер
+function sendToTelegram(message) {
+  const url = `http://localhost:5000/send?message=${encodeURIComponent(message)}`;
+  fetch(url).catch(err => console.error('Ошибка отправки в Telegram:', err));
+}
+</script>
 </body>
 </html>
